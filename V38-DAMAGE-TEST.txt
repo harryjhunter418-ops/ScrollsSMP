@@ -1,0 +1,10 @@
+v38 damage logic (health points, not hearts)
+Sonic Boom: 12 health points = 6 hearts instantly
+Thunder Call: 3 health points = 1.5 hearts each pulse
+Circle of Love: 3 health points = 1.5 hearts each pulse
+Strength Bleed: 3 health points = 1.5 hearts each second for six seconds
+Bloodlust/Blitz: melee damage multipliers, not fixed direct damage
+Freeze, Ice Bubble, Grapple, Invis, Guardian Heart: non-damaging abilities.
+True damage checks PvP and target game mode. Damage can be blocked by PvP=false.
+Use /scroll status to confirm running version, and inspect console for "Damage reverted".
+This ZIP has not been compiled against Paper or gameplay-tested.

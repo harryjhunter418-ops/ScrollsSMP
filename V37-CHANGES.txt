@@ -1,0 +1,1 @@
+Fruits replace newly generated scrolls (APPLE item with custom model data 101-105); old PAPER scrolls remain compatible. Re-Roller can be used from either hand and recognizes old model-data items. Sonic Boom rewritten with ray tracing and immediate 12-health-point damage, with animated cyan shockwave. Not compiled or gameplay tested.
