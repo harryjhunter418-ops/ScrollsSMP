@@ -1,8 +1,11 @@
 name: ScrollsSMP
-version: 8.0.0
+version: 15.0.0
 main: me.scrolls.smp.ScrollsPlugin
 api-version: '1.21'
 commands:
+  abilities:
+    description: Open the animated Scroll Ability Codex
+    usage: /abilities
   words:
     description: Check your Word count
   withdraw:
