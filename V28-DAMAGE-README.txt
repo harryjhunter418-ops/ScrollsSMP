@@ -1,0 +1,1 @@
+v28: direct-health ability damage with actual applied-damage feedback. 8 health points = 4 hearts for Sonic Boom. PvP-disabled worlds intentionally block damage. Other plugin protections may block or restore health. Java compilation and live gameplay not tested.

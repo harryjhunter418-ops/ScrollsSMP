@@ -1,0 +1,1 @@
+v27: Passive detection scans full storage and offhand, shows visible potion icons, provides /scroll passive diagnostics and notifies when active passive changes. Build with GitHub Actions. Not tested in Minecraft.

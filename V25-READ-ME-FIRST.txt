@@ -1,0 +1,1 @@
+ScrollsSMP v25 diagnostic patch. Run /scrollssmp:scroll status to confirm v25 loaded and PvP setting. Run /scrollssmp:scroll withdraw 3 and /scrollssmp:scroll reroll PlayerName. If PvP=false, ability damage is blocked intentionally; enable PvP in server.properties and world configuration. This source was NOT compiled or tested in-game.
