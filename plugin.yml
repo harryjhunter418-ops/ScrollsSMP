@@ -1,5 +1,5 @@
 name: ScrollsSMP
-version: 21.0.0
+version: 24.0.0
 main: me.scrolls.smp.ScrollsPlugin
 api-version: '1.21'
 commands:
@@ -12,9 +12,16 @@ commands:
     description: Withdraw Words as redeemable items
     usage: /withdraw <amount>
     aliases: [withdrawwords]
+  scrollwithdraw:
+    description: Withdraw Scrolls SMP Words as physical items
+    usage: /scrollwithdraw <amount>
   reroll:
     description: Operator reroll for a player
     usage: /reroll <player>
+    permission: scrolls.admin
+  scrollreroll:
+    description: Scrolls SMP admin reroll (avoids command conflicts)
+    usage: /scrollreroll <player>
     permission: scrolls.admin
   repair:
     description: Repair held item or all inventory items (OP only)

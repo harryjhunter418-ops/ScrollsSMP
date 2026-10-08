@@ -46,7 +46,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v22 enabled");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v23 enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
  private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
  // Passives are active anywhere in the player inventory, including the offhand.
@@ -158,7 +158,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  @EventHandler public void deathWords(PlayerDeathEvent e){Player victim=e.getEntity();UUID id=victim.getUniqueId();int remaining=Math.max(0,words(id)-1);setWords(id,remaining);Player killer=victim.getKiller();if(killer!=null&&!killer.getUniqueId().equals(id)){setWords(killer.getUniqueId(),words(killer.getUniqueId())+1);wordBurst(killer,Color.fromRGB(255,195,35));killer.sendMessage(ChatColor.GOLD+"Stole 1 Word! You now have "+words(killer.getUniqueId()));}wordBurst(victim,Color.fromRGB(190,40,55));if(remaining==0){reviveBans.add(id);saveData();Bukkit.getScheduler().runTaskLater(this,()->{if(victim.isOnline())victim.kickPlayer("You ran out of Words. Another player must resurrect you.");},1L);}else victim.sendMessage(ChatColor.RED+"You lost 1 Word. Remaining: "+remaining);}
  @EventHandler public void banCheck(AsyncPlayerPreLoginEvent e){if(reviveBans.contains(e.getUniqueId()))e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED,"You have 0 Words. Ask another player to resurrect you.");}
  private String scrollType(ItemStack item){if(item==null||!item.hasItemMeta())return "";String t=item.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);return t==null?"":t;}
- private boolean rerollPlayer(Player p){for(int j=0;j<p.getInventory().getSize();j++){String old=scrollType(p.getInventory().getItem(j));if(!TYPES.contains(old))continue;List<String> possible=new ArrayList<>(TYPES);possible.remove(old);String next=possible.get(rng.nextInt(possible.size()));p.getInventory().setItem(j,make(next));reveal(p,next,true);return true;}return false;}
+ private boolean rerollPlayer(Player p){for(int j=0;j<p.getInventory().getSize();j++){String old=scrollType(p.getInventory().getItem(j));if(!TYPES.contains(old))continue;List<String> possible=new ArrayList<>(TYPES);possible.remove(old);String next=possible.get(rng.nextInt(possible.size()));p.getInventory().setItem(j,make(next));reveal(p,next,true);return true;}String off=scrollType(p.getInventory().getItemInOffHand());if(TYPES.contains(off)){List<String> possible=new ArrayList<>(TYPES);possible.remove(off);String next=possible.get(rng.nextInt(possible.size()));p.getInventory().setItemInOffHand(make(next));reveal(p,next,true);return true;}return false;}
  // /give is a vanilla command; intercept only our two special item names for players.
  @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=false)
  public void adminGiveShortcut(PlayerCommandPreprocessEvent e){
@@ -196,7 +196,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  @Override public boolean onCommand(CommandSender s,Command c,String label,String[] args){
  if(c.getName().equalsIgnoreCase("scrollgive"))return giveUtilityCommand(s,args);
  if(c.getName().equalsIgnoreCase("abilities")){if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}openAbilities(p);return true;}
- if(c.getName().equalsIgnoreCase("withdraw")){
+ if(c.getName().equalsIgnoreCase("withdraw")||c.getName().equalsIgnoreCase("scrollwithdraw")){
   if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}
   return withdrawWords(p,args);
  }
@@ -213,7 +213,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
   p.updateInventory();p.playSound(p.getLocation(),Sound.BLOCK_ANVIL_USE,0.8f,1.2f);
   p.sendMessage(ChatColor.GREEN+"Repaired "+repaired+" item(s).");return true;
  }
- if(c.getName().equalsIgnoreCase("reroll")){if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"Operator only");return true;}if(args.length!=1){s.sendMessage("Usage: /reroll <player>");return true;}Player target=Bukkit.getPlayerExact(args[0]);if(target==null){s.sendMessage("Player is offline");return true;}if(!rerollPlayer(target)){s.sendMessage("Player has no scroll");return true;}s.sendMessage("Rerolled "+target.getName());return true;}
+ if(c.getName().equalsIgnoreCase("reroll")||c.getName().equalsIgnoreCase("scrollreroll")){if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"Operator only");return true;}if(args.length!=1){s.sendMessage("Usage: /reroll <player>");return true;}Player target=Bukkit.getPlayerExact(args[0]);if(target==null){s.sendMessage("Player is offline");return true;}if(!rerollPlayer(target)){s.sendMessage(ChatColor.RED+"No Scrolls SMP scroll found in "+target.getName()+" inventory or offhand. Use /scroll give <player> <type> first.");return true;}s.sendMessage("Rerolled "+target.getName());return true;}
 if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}if(args.length>0&&args[0].equalsIgnoreCase("withdraw"))return withdrawWords(p,Arrays.copyOfRange(args,1,args.length));s.sendMessage(ChatColor.GOLD+"Words: "+words(p.getUniqueId()));return true;}if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"OP permission required");return true;}if(args.length!=3||!args[0].equalsIgnoreCase("give")||!TYPES.contains(args[2].toLowerCase(Locale.ROOT))){s.sendMessage("/scroll give <player> <sculk|speed|strength|health|frost>");return true;}Player p=Bukkit.getPlayerExact(args[1]);if(p==null){s.sendMessage("Player not online");return true;}p.getInventory().addItem(make(args[2].toLowerCase(Locale.ROOT)));s.sendMessage("Scroll given to "+p.getName());return true;}
  private boolean repairItem(ItemStack item){
   if(item==null||item.getType().isAir())return false;
@@ -223,9 +223,9 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
  }
  private boolean withdrawWords(Player p,String[] args){
   if(args.length==2&&args[0].equalsIgnoreCase("words"))args=new String[]{args[1]};
-  if(args.length!=1){p.sendMessage(ChatColor.YELLOW+"Usage: /withdraw 3 (or /words withdraw 3)");return true;}
+  if(args.length!=1){p.sendMessage(ChatColor.YELLOW+"Usage: /scrollwithdraw 3 (or /words withdraw 3)");return true;}
   int amount;
-  try{amount=Integer.parseInt(args[0]);}catch(NumberFormatException ex){p.sendMessage(ChatColor.RED+"Enter a whole number, e.g. /withdraw 3");return true;}
+  try{amount=Integer.parseInt(args[0]);}catch(NumberFormatException ex){p.sendMessage(ChatColor.RED+"Enter a whole number, e.g. /scrollwithdraw 3");return true;}
   int balance=words(p.getUniqueId());
   if(amount<1){p.sendMessage(ChatColor.RED+"Amount must be at least 1.");return true;}
   if(amount>=balance){p.sendMessage(ChatColor.RED+"You must keep at least 1 Word. Balance: "+balance);return true;}
