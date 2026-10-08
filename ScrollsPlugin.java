@@ -19,6 +19,8 @@ import org.bukkit.persistence.*;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.*;
 import org.bukkit.util.Vector;
+import org.bukkit.util.RayTraceResult;
+import org.bukkit.FluidCollisionMode;
 import java.util.*;
 
 public final class ScrollsPlugin extends JavaPlugin implements Listener, CommandExecutor {
@@ -38,22 +40,32 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final List<Bubble> bubbles=new ArrayList<>();
  private final List<Aura> auras=new ArrayList<>();
  private final Map<UUID,Long> guardians=new HashMap<>();
+ private final Map<UUID,Long> swingUntil=new HashMap<>();
  private record Aura(Location center,long until,UUID owner) {}
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v16 enabled");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v20 enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
- private String equipped(Player p){ItemStack i=p.getInventory().getItemInMainHand();if(i.getType()!=Material.PAPER||!i.hasItemMeta())return "";String t=i.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);return TYPES.contains(t)?t:"";}
+ private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
+ // Passives are active anywhere in the player inventory, including the offhand.
+ // Main hand wins, then offhand, then hotbar/inventory, so only one scroll's passives apply.
+ private String passiveScroll(Player p){
+  String main=equipped(p);if(!main.isEmpty())return main;
+  String off=validScroll(p.getInventory().getItemInOffHand());if(!off.isEmpty())return off;
+  for(int slot=0;slot<36;slot++){String type=validScroll(p.getInventory().getItem(slot));if(!type.isEmpty())return type;}
+  return "";
+ }
+ private String validScroll(ItemStack item){if(item==null||item.getType()!=Material.PAPER||!item.hasItemMeta())return "";String type=item.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);return TYPES.contains(type)?type:"";}
  private String label(String t){return Character.toUpperCase(t.charAt(0))+t.substring(1);}
  private ChatColor color(String t){return switch(t){case "sculk"->ChatColor.DARK_GRAY;case "speed"->ChatColor.YELLOW;case "strength"->ChatColor.RED;case "health"->ChatColor.LIGHT_PURPLE;default->ChatColor.AQUA;};}
  private List<String> lore(String t){List<String> l=new ArrayList<>();l.add(ChatColor.GOLD+"ABILITIES  |  Right-click / Sneak + Right-click");switch(t){
  case "sculk"->{l.add(ChatColor.WHITE+"1. Sonic Boom"+ChatColor.GRAY+"  •  4 hearts  •  45s");l.add(ChatColor.WHITE+"2. True Invisibility"+ChatColor.GRAY+"  •  8s  •  60s");l.add(ChatColor.DARK_AQUA+"PASSIVES");l.add(ChatColor.GRAY+"13 total hearts • Warden immune • Speed II on sculk");}
  case "speed"->{l.add(ChatColor.WHITE+"1. Frenzy"+ChatColor.GRAY+"  •  6s  •  59s");l.add(ChatColor.WHITE+"2. Lightning Field"+ChatColor.GRAY+"  •  5s  •  70s");l.add(ChatColor.YELLOW+"PASSIVES");l.add(ChatColor.GRAY+"Speed I always • Speed II in oceans");}
- case "strength"->{l.add(ChatColor.WHITE+"1. Bloodlust Auto-Crit"+ChatColor.GRAY+"  •  10s  •  50s");l.add(ChatColor.WHITE+"2. Grappling Hook"+ChatColor.GRAY+"  •  5 blocks  •  45s");l.add(ChatColor.RED+"PASSIVES");l.add(ChatColor.GRAY+"Strength I • 12 hearts • Bleed every 20 hits");}
+ case "strength"->{l.add(ChatColor.WHITE+"1. Bloodlust Auto-Crit"+ChatColor.GRAY+"  •  10s  •  50s");l.add(ChatColor.WHITE+"2. Grappling Hook"+ChatColor.GRAY+"  •  20 blocks / swing  •  45s");l.add(ChatColor.RED+"PASSIVES");l.add(ChatColor.GRAY+"Strength I • 12 hearts • Bleed every 20 hits");}
  case "health"->{l.add(ChatColor.WHITE+"1. Regeneration III + Resistance II"+ChatColor.GRAY+"  •  5s  •  35s");l.add(ChatColor.WHITE+"2. Circle of Love"+ChatColor.GRAY+"  •  7-block radius  •  10s  •  50s");l.add(ChatColor.LIGHT_PURPLE+"PASSIVES");l.add(ChatColor.GRAY+"15 hearts • Regeneration I • Apples become golden");}
  case "frost"->{l.add(ChatColor.WHITE+"1. Freeze Target"+ChatColor.GRAY+"  •  6s  •  60s");l.add(ChatColor.WHITE+"2. Ice Bubble"+ChatColor.GRAY+"  •  10s  •  60s");l.add(ChatColor.AQUA+"PASSIVES");l.add(ChatColor.GRAY+"Freeze immune • 14 hearts • Speed II on ice/snow");}
- }l.add(ChatColor.DARK_GRAY+"Hold in main hand to activate passives");return l;}
+ }l.add(ChatColor.DARK_GRAY+"Passives work in inventory or offhand");return l;}
  private ItemStack make(String t){ItemStack i=new ItemStack(Material.PAPER);ItemMeta m=i.getItemMeta();m.setDisplayName(color(t)+"✦ "+label(t)+" Scroll");m.setLore(lore(t));m.setCustomModelData(101+TYPES.indexOf(t));m.getPersistentDataContainer().set(key,PersistentDataType.STRING,t);i.setItemMeta(m);return i;}
  private void loadData(){dataFile=new File(getDataFolder(),"players.yml");getDataFolder().mkdirs();data=YamlConfiguration.loadConfiguration(dataFile);for(String id:data.getStringList("revive-bans")){try{reviveBans.add(UUID.fromString(id));}catch(IllegalArgumentException ignored){}}}
  private void saveData(){data.set("revive-bans",reviveBans.stream().map(UUID::toString).toList());try{data.save(dataFile);}catch(IOException ex){getLogger().severe("Cannot save players.yml: "+ex.getMessage());}}
@@ -75,7 +87,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
    List<String> description=new ArrayList<>(lore(type));description.add(0,ChatColor.GOLD+"✦ Click to view live cooldowns ✦");
    description.add(ChatColor.DARK_GRAY+"Right-click: Ability 1 | Sneak + Right-click: Ability 2");meta.setLore(description);scroll.setItemMeta(meta);inv.setItem(positions[i],scroll);
   }
-  inv.setItem(22,guiItem(Material.ENCHANTED_BOOK,ChatColor.LIGHT_PURPLE+"✦ YOUR MAGIC ✦",ChatColor.GRAY+"Held scroll: "+(equipped(p).isEmpty()?"none":label(equipped(p))),ChatColor.GOLD+"Words: "+words(p.getUniqueId()),ChatColor.WHITE+"/withdraw <amount> to trade Words"));
+  inv.setItem(22,guiItem(Material.ENCHANTED_BOOK,ChatColor.LIGHT_PURPLE+"✦ YOUR MAGIC ✦",ChatColor.GRAY+"Passive scroll: "+(passiveScroll(p).isEmpty()?"none":label(passiveScroll(p))),ChatColor.GOLD+"Words: "+words(p.getUniqueId()),ChatColor.WHITE+"/withdraw <amount> to trade Words"));
   inv.setItem(38,utility("word"));inv.setItem(40,utility("reroller"));inv.setItem(42,utility("resurrection"));
   p.openInventory(inv);
  }
@@ -112,48 +124,162 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  @EventHandler public void banCheck(AsyncPlayerPreLoginEvent e){if(reviveBans.contains(e.getUniqueId()))e.disallow(AsyncPlayerPreLoginEvent.Result.KICK_BANNED,"You have 0 Words. Ask another player to resurrect you.");}
  private String scrollType(ItemStack item){if(item==null||!item.hasItemMeta())return "";String t=item.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);return t==null?"":t;}
  private boolean rerollPlayer(Player p){for(int j=0;j<p.getInventory().getSize();j++){String old=scrollType(p.getInventory().getItem(j));if(!TYPES.contains(old))continue;List<String> possible=new ArrayList<>(TYPES);possible.remove(old);String next=possible.get(rng.nextInt(possible.size()));p.getInventory().setItem(j,make(next));reveal(p,next,true);return true;}return false;}
+ // /give is a vanilla command; intercept only our two special item names for players.
+ @EventHandler(priority=EventPriority.LOWEST,ignoreCancelled=false)
+ public void adminGiveShortcut(PlayerCommandPreprocessEvent e){
+  String raw=e.getMessage().trim();
+  if(!raw.toLowerCase(Locale.ROOT).startsWith("/give "))return;
+  String[] parts=raw.substring(1).split("\\s+");
+  if(parts.length<2)return;
+  String kind=parts[1].toLowerCase(Locale.ROOT);
+  if(!kind.equals("reroller")&&!kind.equals("words")&&!kind.equals("word"))return;
+  e.setCancelled(true);
+  giveUtilityCommand(e.getPlayer(),Arrays.copyOfRange(parts,1,parts.length));
+ }
+ private boolean giveUtilityCommand(CommandSender sender,String[] args){
+  if(!sender.hasPermission("scrolls.admin")){sender.sendMessage(ChatColor.RED+"OP permission required.");return true;}
+  if(args.length==0){sender.sendMessage(ChatColor.YELLOW+"Usage: /give reroller [amount] or /give words [amount]");return true;}
+  String kind=args[0].toLowerCase(Locale.ROOT);
+  if(!kind.equals("reroller")&&!kind.equals("words")&&!kind.equals("word")){
+   sender.sendMessage(ChatColor.YELLOW+"Usage: /scrollgive <reroller|words> [amount] [player]");return true;
+  }
+  int amount=1;
+  if(args.length>3){sender.sendMessage(ChatColor.RED+"Too many arguments.");return true;}
+  if(args.length>=2){try{amount=Integer.parseInt(args[1]);}catch(NumberFormatException ex){sender.sendMessage(ChatColor.RED+"Amount must be a whole number.");return true;}}
+  if(amount<1||amount>64){sender.sendMessage(ChatColor.RED+"Choose an amount from 1 to 64.");return true;}
+  Player recipient;
+  if(args.length==3){recipient=Bukkit.getPlayerExact(args[2]);if(recipient==null){sender.sendMessage(ChatColor.RED+"Player not online.");return true;}}
+  else if(sender instanceof Player p)recipient=p;
+  else{sender.sendMessage(ChatColor.RED+"Console usage: /scrollgive <reroller|words> <amount> <player>");return true;}
+  ItemStack item=utility(kind.equals("reroller")?"reroller":"word");item.setAmount(amount);
+  Map<Integer,ItemStack> leftover=recipient.getInventory().addItem(item);
+  for(ItemStack rest:leftover.values())recipient.getWorld().dropItemNaturally(recipient.getLocation(),rest);
+  recipient.sendMessage(ChatColor.GOLD+"Received "+amount+" "+(kind.equals("reroller")?"Re-Roller(s)":"Word item(s)")+" from an admin.");
+  sender.sendMessage(ChatColor.GREEN+"Gave "+amount+" "+(kind.equals("reroller")?"Re-Roller(s)":"Word item(s)")+" to "+recipient.getName()+".");
+  return true;
+ }
  @Override public boolean onCommand(CommandSender s,Command c,String label,String[] args){
+ if(c.getName().equalsIgnoreCase("scrollgive"))return giveUtilityCommand(s,args);
  if(c.getName().equalsIgnoreCase("abilities")){if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}openAbilities(p);return true;}
- if(c.getName().equalsIgnoreCase("withdraw")){if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}if(args.length!=1&&!(args.length==2&&args[0].equalsIgnoreCase("words"))){p.sendMessage(ChatColor.YELLOW+"Usage: /withdraw <amount> or /withdraw words <amount>");return true;}int amount;try{amount=Integer.parseInt(args[args.length-1]);}catch(NumberFormatException ex){p.sendMessage(ChatColor.RED+"Enter a number");return true;}int balance=words(p.getUniqueId());if(amount<1||amount>=balance){p.sendMessage(ChatColor.RED+"Keep at least 1 Word. Current: "+balance);return true;}ItemStack item=utility("word");item.setAmount(amount);if(p.getInventory().firstEmpty()<0){p.sendMessage(ChatColor.RED+"Make an empty inventory slot first");return true;}p.getInventory().addItem(item);setWords(p.getUniqueId(),balance-amount);wordBurst(p,Color.fromRGB(255,190,45));p.playSound(p.getLocation(),Sound.BLOCK_ENCHANTMENT_TABLE_USE,0.9f,1.35f);p.sendMessage(ChatColor.GOLD+"Withdrew "+amount+" Words. Balance: "+words(p.getUniqueId()));return true;}
+ if(c.getName().equalsIgnoreCase("withdraw")){
+  if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}
+  return withdrawWords(p,args);
+ }
+ if(c.getName().equalsIgnoreCase("repair")){
+  if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"OP permission required");return true;}
+  if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}
+  if(args.length>1 || (args.length==1&&!args[0].equalsIgnoreCase("all"))){s.sendMessage(ChatColor.YELLOW+"Usage: /repair [all]");return true;}
+  int repaired=0;
+  if(args.length==1){
+   for(ItemStack item:p.getInventory().getContents())if(repairItem(item))repaired++;
+   if(repairItem(p.getInventory().getItemInOffHand()))repaired++;
+  }else if(repairItem(p.getInventory().getItemInMainHand()))repaired++;
+  if(repaired==0){p.sendMessage(ChatColor.YELLOW+"No damaged repairable items found.");return true;}
+  p.updateInventory();p.playSound(p.getLocation(),Sound.BLOCK_ANVIL_USE,0.8f,1.2f);
+  p.sendMessage(ChatColor.GREEN+"Repaired "+repaired+" item(s).");return true;
+ }
  if(c.getName().equalsIgnoreCase("reroll")){if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"Operator only");return true;}if(args.length!=1){s.sendMessage("Usage: /reroll <player>");return true;}Player target=Bukkit.getPlayerExact(args[0]);if(target==null){s.sendMessage("Player is offline");return true;}if(!rerollPlayer(target)){s.sendMessage("Player has no scroll");return true;}s.sendMessage("Rerolled "+target.getName());return true;}
-if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}s.sendMessage(ChatColor.GOLD+"Words: "+words(p.getUniqueId()));return true;}if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"OP permission required");return true;}if(args.length!=3||!args[0].equalsIgnoreCase("give")||!TYPES.contains(args[2].toLowerCase(Locale.ROOT))){s.sendMessage("/scroll give <player> <sculk|speed|strength|health|frost>");return true;}Player p=Bukkit.getPlayerExact(args[1]);if(p==null){s.sendMessage("Player not online");return true;}p.getInventory().addItem(make(args[2].toLowerCase(Locale.ROOT)));s.sendMessage("Scroll given to "+p.getName());return true;}
+if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}if(args.length>0&&args[0].equalsIgnoreCase("withdraw"))return withdrawWords(p,Arrays.copyOfRange(args,1,args.length));s.sendMessage(ChatColor.GOLD+"Words: "+words(p.getUniqueId()));return true;}if(!s.hasPermission("scrolls.admin")){s.sendMessage(ChatColor.RED+"OP permission required");return true;}if(args.length!=3||!args[0].equalsIgnoreCase("give")||!TYPES.contains(args[2].toLowerCase(Locale.ROOT))){s.sendMessage("/scroll give <player> <sculk|speed|strength|health|frost>");return true;}Player p=Bukkit.getPlayerExact(args[1]);if(p==null){s.sendMessage("Player not online");return true;}p.getInventory().addItem(make(args[2].toLowerCase(Locale.ROOT)));s.sendMessage("Scroll given to "+p.getName());return true;}
+ private boolean repairItem(ItemStack item){
+  if(item==null||item.getType().isAir())return false;
+  if(!(item.getItemMeta() instanceof org.bukkit.inventory.meta.Damageable damage))return false;
+  if(damage.getDamage()<=0)return false;
+  damage.setDamage(0);item.setItemMeta(damage);return true;
+ }
+ private boolean withdrawWords(Player p,String[] args){
+  if(args.length==2&&args[0].equalsIgnoreCase("words"))args=new String[]{args[1]};
+  if(args.length!=1){p.sendMessage(ChatColor.YELLOW+"Usage: /withdraw 3 (or /words withdraw 3)");return true;}
+  int amount;
+  try{amount=Integer.parseInt(args[0]);}catch(NumberFormatException ex){p.sendMessage(ChatColor.RED+"Enter a whole number, e.g. /withdraw 3");return true;}
+  int balance=words(p.getUniqueId());
+  if(amount<1){p.sendMessage(ChatColor.RED+"Amount must be at least 1.");return true;}
+  if(amount>=balance){p.sendMessage(ChatColor.RED+"You must keep at least 1 Word. Balance: "+balance);return true;}
+  ItemStack prototype=utility("word");
+  int freeCapacity=0;
+  for(ItemStack slot:p.getInventory().getStorageContents()){
+   if(slot==null||slot.getType().isAir())freeCapacity+=prototype.getMaxStackSize();
+   else if(slot.isSimilar(prototype))freeCapacity+=Math.max(0,slot.getMaxStackSize()-slot.getAmount());
+  }
+  if(freeCapacity<amount){p.sendMessage(ChatColor.RED+"Not enough inventory space for "+amount+" Word items.");return true;}
+  int left=amount;
+  while(left>0){ItemStack stack=prototype.clone();int count=Math.min(left,stack.getMaxStackSize());stack.setAmount(count);
+   Map<Integer,ItemStack> overflow=p.getInventory().addItem(stack);
+   if(!overflow.isEmpty()){p.sendMessage(ChatColor.RED+"Inventory changed; withdrawal cancelled. Check your items.");return true;}
+   left-=count;
+  }
+  setWords(p.getUniqueId(),balance-amount);
+  wordBurst(p,Color.fromRGB(255,190,45));p.playSound(p.getLocation(),Sound.BLOCK_ENCHANTMENT_TABLE_USE,0.9f,1.35f);
+  p.sendMessage(ChatColor.GOLD+"Withdrew "+amount+" Word item(s). Balance: "+words(p.getUniqueId()));
+  return true;
+ }
  private boolean ready(Player p,String id,int seconds){Map<String,Long> m=cooldowns.computeIfAbsent(p.getUniqueId(),k->new HashMap<>());long now=System.currentTimeMillis(),end=m.getOrDefault(id,0L);if(end>now){p.sendActionBar(ChatColor.RED+"Cooldown "+((end-now+999)/1000)+"s");return false;}m.put(id,now+seconds*1000L);return true;}
  private Player target(Player p,double range){Player best=null;double dot=0.88;Vector look=p.getEyeLocation().getDirection();for(Player q:p.getWorld().getPlayers()){if(q==p||q.getGameMode()==GameMode.SPECTATOR||q.getLocation().distanceSquared(p.getLocation())>range*range)continue;Vector dir=q.getEyeLocation().toVector().subtract(p.getEyeLocation().toVector()).normalize();double d=dir.dot(look);if(d>dot&&p.hasLineOfSight(q)){best=q;dot=d;}}return best;}
- @EventHandler public void click(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String t=equipped(p);if(t.isEmpty())return;e.setCancelled(true);boolean second=p.isSneaking();String id=t+(second?"2":"1");int cd=switch(id){case "sculk1"->45;case "sculk2"->60;case "speed1"->59;case "speed2"->70;case "strength1"->50;case "strength2"->45;case "health1"->35;case "health2"->50;default->60;};if(!ready(p,id,cd))return;long now=System.currentTimeMillis();switch(id){
+ private Player grappleTarget(Player p,double range){
+  Player best=null;double bestScore=-1;Location eye=p.getEyeLocation();Vector facing=eye.getDirection().normalize();
+  for(Player other:p.getWorld().getPlayers()){
+   if(other==p||other.getGameMode()==GameMode.SPECTATOR||other.isDead()||!p.hasLineOfSight(other))continue;
+   Location at=other.getLocation().clone().add(0,1.0,0);Vector delta=at.toVector().subtract(eye.toVector());
+   double distance=delta.length();if(distance<0.01||distance>range+0.8)continue;
+   double alignment=facing.dot(delta.normalize());if(alignment<0.55)continue;
+   double score=alignment-distance*0.025;if(score>bestScore){bestScore=score;best=other;}
+  }
+  return best;
+ }
+ private boolean frameEffect(int frame){return frame%5==0;}
+ private Location grappleBlock(Player p,double range){
+  RayTraceResult result=p.getWorld().rayTraceBlocks(p.getEyeLocation(),p.getEyeLocation().getDirection(),range,FluidCollisionMode.NEVER,true);
+  if(result==null||result.getHitBlock()==null||!result.getHitBlock().getType().isSolid())return null;
+  return result.getHitPosition().toLocation(p.getWorld());
+ }
+ private void chain(Location from,Location to,double progress){
+  if(from.getWorld()==null||!from.getWorld().equals(to.getWorld()))return;
+  Vector delta=to.toVector().subtract(from.toVector());double length=delta.length();if(length<0.01)return;
+  Vector dir=delta.normalize();int count=(int)Math.ceil(length*5*Math.min(1,progress));
+  for(int i=0;i<=count;i++){Location point=from.clone().add(dir.clone().multiply(i*0.2));Color color=i%3==0?Color.fromRGB(255,65,75):Color.fromRGB(110,5,25);from.getWorld().spawnParticle(Particle.DUST,point,1,0,0,0,0,new Particle.DustOptions(color,2.0f));}
+  Location tip=from.clone().add(dir.clone().multiply(Math.min(length,count*0.2)));from.getWorld().spawnParticle(Particle.CRIT,tip,3,0.1,0.1,0.1,0.02);
+ }
+ @EventHandler public void click(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String t=equipped(p);if(t.isEmpty())return;e.setCancelled(true);boolean second=p.isSneaking();String id=t+(second?"2":"1");int cd=switch(id){case "sculk1"->45;case "sculk2"->60;case "speed1"->59;case "speed2"->70;case "strength1"->50;case "strength2"->45;case "health1"->35;case "health2"->50;default->60;};if(id.equals("strength2")&&grappleTarget(p,20)==null&&grappleBlock(p,20)==null){p.sendActionBar(ChatColor.RED+"Aim at a player or solid block within 20 blocks");return;}
+ if(!ready(p,id,cd))return;long now=System.currentTimeMillis();switch(id){
  case "sculk1"->{Player q=target(p,16);Location origin=p.getEyeLocation().clone();Vector direction=origin.getDirection().clone();for(int i=1;i<=14;i++){final int distance=i;Bukkit.getScheduler().runTaskLater(this,()->{if(!p.isOnline())return;Location wave=origin.clone().add(direction.clone().multiply(distance));p.getWorld().spawnParticle(Particle.SONIC_BOOM,wave,1);p.getWorld().spawnParticle(Particle.END_ROD,wave,15,0.55,0.55,0.55,0.025);ring(p.getWorld(),wave,0.8,0,Color.fromRGB(0,220,255),18);p.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME,wave,8,0.35,0.35,0.35,0.02);},i);}if(q!=null){trueDamage(q,8,p);p.sendMessage("Sonic Boom hit "+q.getName());}else p.sendMessage("Sonic Boom missed");}
  case "sculk2"->{hidden.put(p.getUniqueId(),now+8000);p.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY,160,0,false,false,false));p.getWorld().spawnParticle(Particle.SMOKE,p.getLocation().add(0,1,0),70,0.5,0.9,0.5,0.03);p.getWorld().playSound(p.getLocation(),Sound.ENTITY_ENDERMAN_TELEPORT,0.8f,0.65f);hide(p);p.spawnParticle(Particle.REVERSE_PORTAL,p.getEyeLocation(),60,0.6,0.7,0.6,0.05);p.sendMessage("True Invisibility for 8 seconds");}
  case "speed1"->{frenzy.put(p.getUniqueId(),now+6000);p.addPotionEffect(new PotionEffect(PotionEffectType.HASTE,120,1));p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,p.getLocation().add(0,1,0),90,0.7,0.8,0.7,0.12);p.getWorld().playSound(p.getLocation(),Sound.ENTITY_LIGHTNING_BOLT_THUNDER,0.45f,1.8f);p.sendMessage("Frenzy active for 6 seconds");}
  case "speed2"->{Location at=p.getLocation().clone();for(int j=0;j<5;j++){int delay=j*20;Bukkit.getScheduler().runTaskLater(this,()->{if(!p.isOnline())return;at.getWorld().strikeLightningEffect(at);at.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,at.clone().add(0,1,0),65,3,1.5,3,0.1);for(Entity entity:at.getWorld().getNearbyEntities(at,4,3,4))if(entity instanceof LivingEntity le&&entity!=p)trueDamage(le,1,p);},delay);}for(int k=0;k<4;k++)ring(p.getWorld(),at,2.5+k*0.5,0.25,Color.fromRGB(255,225,50),48);p.sendMessage("Lightning field summoned");}
  case "strength1"->{bloodlust.put(p.getUniqueId(),now+10000);p.getWorld().spawnParticle(Particle.DUST,p.getLocation().add(0,1,0),85,0.65,0.8,0.65,new Particle.DustOptions(Color.RED,1.8f));p.getWorld().playSound(p.getLocation(),Sound.ENTITY_WITHER_SPAWN,0.4f,1.5f);p.sendMessage("Bloodlust for 10 seconds");}
- case "strength2"->{Player q=target(p,5);if(q==null){p.sendMessage("No player within 5 blocks in your crosshair");break;}
+ case "strength2"->{
+  Player q=grappleTarget(p,20);
+  Location anchor=q==null?grappleBlock(p,20):null;
+  if(q==null&&anchor==null){p.sendActionBar(ChatColor.RED+"Aim at a player or solid block within 20 blocks");break;}
   p.getWorld().playSound(p.getLocation(),Sound.ENTITY_FISHING_BOBBER_THROW,1f,0.7f);
-  // Animated chain: moving hook head, twin red-and-black chain links, sparks and pull.
-  for(int step=0;step<16;step++){final int frame=step;
-   Bukkit.getScheduler().runTaskLater(this,()->{
+  if(q!=null){
+   // Pull the target with a bright moving red chain, up to 20 blocks.
+   for(int frame=0;frame<36;frame++){final int f=frame;Bukkit.getScheduler().runTaskLater(this,()->{
     if(!p.isOnline()||!q.isOnline()||!p.getWorld().equals(q.getWorld()))return;
-    Location from=p.getEyeLocation().clone().add(p.getEyeLocation().getDirection().multiply(0.5));
-    Location to=q.getLocation().clone().add(0,1.15,0);
-    Vector delta=to.toVector().subtract(from.toVector());double length=delta.length();if(length<0.05)return;
-    Vector direction=delta.clone().normalize();Vector side=direction.clone().crossProduct(new Vector(0,1,0));
-    if(side.lengthSquared()<0.001)side=new Vector(1,0,0);side.normalize().multiply(0.14);
-    double progress=Math.min(1.0,(frame+1)/6.0);
-    int links=Math.max(1,(int)(length*5*progress));
-    for(int link=0;link<=links;link++){
-     double t=link/5.0;Location point=from.clone().add(direction.clone().multiply(t));
-     double wobble=Math.sin(link*1.7+frame*0.8)*0.10;
-     point.add(0,wobble,0);
-     Color color=(link%2==0)?Color.fromRGB(240,25,40):Color.fromRGB(60,5,12);
-     p.getWorld().spawnParticle(Particle.DUST,point,1,0,0,0,0,new Particle.DustOptions(color,2.1f));
-     if(link%3==0){p.getWorld().spawnParticle(Particle.DUST,point.clone().add(side),1,0,0,0,0,new Particle.DustOptions(Color.fromRGB(255,95,95),1.5f));}
-    }
-    Location head=from.clone().add(direction.clone().multiply(length*progress));
-    p.getWorld().spawnParticle(Particle.CRIT,head,4,0.12,0.12,0.12,0.03);
-    p.getWorld().spawnParticle(Particle.DUST,head,8,0.13,0.13,0.13,0,new Particle.DustOptions(Color.RED,2.2f));
-    if(frame==5){p.getWorld().playSound(to,Sound.ENTITY_FISHING_BOBBER_SPLASH,0.8f,0.75f);q.getWorld().spawnParticle(Particle.DAMAGE_INDICATOR,to,16,0.3,0.5,0.3,0.05);}
-    if(frame>=6&&frame<=13){Vector pull=p.getLocation().toVector().subtract(q.getLocation().toVector());if(pull.lengthSquared()>1.5){pull.normalize().multiply(0.6);pull.setY(0.16);q.setVelocity(pull);}}
-   },step*2L);
+    Location from=p.getEyeLocation(),to=q.getLocation().add(0,1,0);
+    chain(from,to,Math.min(1.0,(f+1)/9.0));
+    if(f>=9&&f<34){Vector pull=p.getLocation().toVector().subtract(q.getLocation().toVector());double distance=pull.length();if(distance>2){q.setVelocity(pull.normalize().multiply(Math.min(1.45,0.5+distance*0.07)).setY(0.22));q.setFallDistance(0);}}
+   },frame);}
+   p.sendActionBar(ChatColor.RED+"Grappling player!");
+  }else{
+   // Grapple a block and swing toward it. Looking/moving sideways adds momentum.
+   final Location hook=anchor.clone();final long until=System.currentTimeMillis()+5500;
+   swingUntil.put(p.getUniqueId(),until);
+   final double ropeLength=Math.max(3.0,hook.distance(p.getEyeLocation())*0.78);
+   for(int frame=0;frame<110;frame++){Bukkit.getScheduler().runTaskLater(this,()->{
+    if(!p.isOnline()||p.isDead()||!p.getWorld().equals(hook.getWorld())||p.isSneaking()||swingUntil.getOrDefault(p.getUniqueId(),0L)!=until){swingUntil.remove(p.getUniqueId(),until);return;}
+    Location body=p.getLocation().add(0,1,0);Vector tether=hook.toVector().subtract(body.toVector());double dist=tether.length();
+    if(dist<0.1)return;
+    Vector toward=tether.clone().normalize();Vector velocity=p.getVelocity();
+    // Pull taut rope inward and preserve sideways momentum for an arc.
+    if(dist>ropeLength){double outward=velocity.dot(toward);if(outward<0)velocity.subtract(toward.clone().multiply(outward*0.85));velocity.add(toward.clone().multiply(Math.min(0.35,0.09+(dist-ropeLength)*0.065)));}
+    Vector view=p.getEyeLocation().getDirection().setY(0);if(view.lengthSquared()>0.01){view.normalize();Vector tangent=view.subtract(toward.clone().multiply(view.dot(toward)));if(tangent.lengthSquared()>0.02)velocity.add(tangent.normalize().multiply(0.045));}
+    if(velocity.length()>1.35)velocity.normalize().multiply(1.35);
+    p.setVelocity(velocity);p.setFallDistance(0);
+    chain(p.getEyeLocation(),hook,1.0);
+    if(frameEffect(frame))p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,hook,7,0.25,0.25,0.25,0.02);
+   },frame);}
+   Bukkit.getScheduler().runTaskLater(this,()->swingUntil.remove(p.getUniqueId(),until),112L);
+   p.sendMessage(ChatColor.RED+"Grapple attached! Steer to swing; sneak to release (5.5s).");
   }
-  p.sendMessage(ChatColor.RED+"Grappling chain launched!");
  }
  case "health1"->{guardians.put(p.getUniqueId(),now+5000);p.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION,100,2));p.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE,100,1));p.getWorld().spawnParticle(Particle.HEART,p.getLocation().add(0,1,0),45,0.7,0.9,0.7,0.02);p.getWorld().playSound(p.getLocation(),Sound.BLOCK_BEACON_ACTIVATE,0.7f,1.5f);}
  case "health2"->{Location center=p.getLocation().clone();auras.add(new Aura(center.clone(),now+10000,p.getUniqueId()));for(int j=0;j<10;j++){int delay=j*20;Bukkit.getScheduler().runTaskLater(this,()->{if(center.getWorld()==null)return;for(Entity en:center.getWorld().getNearbyEntities(center,7,3,7))if(en instanceof Player other&&other!=p&&other.getLocation().distanceSquared(center)<=49)trueDamage(other,1,p);for(int a=0;a<36;a++){double angle=a*Math.PI/18;center.getWorld().spawnParticle(Particle.HEART,center.clone().add(Math.cos(angle)*7,0.2,Math.sin(angle)*7),1);}},delay);}p.sendMessage("Circle of Love placed");}
@@ -194,8 +320,8 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
  private void reveal(Player p){hidden.remove(p.getUniqueId());for(Player q:Bukkit.getOnlinePlayers())if(q!=p)q.showPlayer(this,p);}
  @EventHandler public void join(PlayerJoinEvent e){for(UUID id:hidden.keySet()){Player p=Bukkit.getPlayer(id);if(p!=null&&p!=e.getPlayer())e.getPlayer().hidePlayer(this,p);}}
  @EventHandler public void move(PlayerMoveEvent e){if(e.getTo()==null)return;UUID id=e.getPlayer().getUniqueId();if(rooted.getOrDefault(id,0L)>System.currentTimeMillis()){if(e.getFrom().getX()!=e.getTo().getX()||e.getFrom().getZ()!=e.getTo().getZ()){Location l=e.getFrom().clone();l.setYaw(e.getTo().getYaw());l.setPitch(e.getTo().getPitch());e.setTo(l);}return;}for(Bubble b:bubbles){if(!b.center.getWorld().equals(e.getTo().getWorld())||e.getPlayer().getUniqueId().equals(b.owner))continue;boolean was=e.getFrom().distanceSquared(b.center)<49,is=e.getTo().distanceSquared(b.center)<49;if(!was&&is){e.setTo(e.getFrom());e.getPlayer().sendActionBar(ChatColor.AQUA+"Ice bubble blocks entry");break;}}}
- @EventHandler public void mobTarget(EntityTargetLivingEntityEvent e){if(e.getEntity() instanceof Warden&&e.getTarget() instanceof Player p&&equipped(p).equals("sculk"))e.setCancelled(true);}
- @EventHandler public void damage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player p))return;String t=equipped(p);if(t.equals("sculk")&&e instanceof EntityDamageByEntityEvent by&&(by.getDamager() instanceof Warden||by.getDamager() instanceof org.bukkit.entity.Projectile projectile&&projectile.getShooter() instanceof Warden)){e.setCancelled(true);return;}if(t.equals("frost")&&(e.getCause()==EntityDamageEvent.DamageCause.FREEZE)){e.setCancelled(true);}}
+ @EventHandler public void mobTarget(EntityTargetLivingEntityEvent e){if(e.getEntity() instanceof Warden&&e.getTarget() instanceof Player p&&passiveScroll(p).equals("sculk"))e.setCancelled(true);}
+ @EventHandler public void damage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player p))return;String t=passiveScroll(p);if(t.equals("sculk")&&e instanceof EntityDamageByEntityEvent by&&(by.getDamager() instanceof Warden||by.getDamager() instanceof org.bukkit.entity.Projectile projectile&&projectile.getShooter() instanceof Warden)){e.setCancelled(true);return;}if(t.equals("frost")&&(e.getCause()==EntityDamageEvent.DamageCause.FREEZE)){e.setCancelled(true);}}
  // True damage: direct health reduction, ignoring armor, resistance and absorption.
  // Only use for scroll abilities; normal sword damage remains vanilla.
  private void trueDamage(LivingEntity victim,double amount,Player caster){
@@ -210,7 +336,7 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
   // Its damage is neutralized and true health loss is applied directly afterward.
   victim.setHealth(Math.max(0,health-amount));
  }
- @EventHandler public void combat(EntityDamageByEntityEvent e){if(!(e.getDamager() instanceof Player p)||!(e.getEntity() instanceof LivingEntity victim))return;String t=equipped(p);long now=System.currentTimeMillis();if(t.equals("speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.35;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}if(t.equals("strength")){if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.5;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}int n=hits.merge(p.getUniqueId(),1,Integer::sum);if(n%20==0){for(int j=1;j<=6;j++)Bukkit.getScheduler().runTaskLater(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,1,p);},j*20L);p.sendMessage("Bleed applied for 6 seconds");}}}
+ @EventHandler public void combat(EntityDamageByEntityEvent e){if(!(e.getDamager() instanceof Player p)||!(e.getEntity() instanceof LivingEntity victim))return;String t=passiveScroll(p);long now=System.currentTimeMillis();if(t.equals("speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.35;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}if(t.equals("strength")){if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.5;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}int n=hits.merge(p.getUniqueId(),1,Integer::sum);if(n%20==0){for(int j=1;j<=6;j++)Bukkit.getScheduler().runTaskLater(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,1,p);},j*20L);p.sendMessage("Bleed applied for 6 seconds");}}}
  // Convert regular apples in inventory while the Health Scroll is equipped.
  private void convertApples(Player p){PlayerInventory inv=p.getInventory();for(int slot=0;slot<36;slot++){ItemStack i=inv.getItem(slot);if(i!=null&&i.getType()==Material.APPLE){inv.setItem(slot,new ItemStack(Material.GOLDEN_APPLE,i.getAmount()));}}}
  private void restoreHealth(Player p){Double old=baseHealth.remove(p.getUniqueId());if(old!=null){AttributeInstance a=p.getAttribute(Attribute.MAX_HEALTH);if(a!=null)a.setBaseValue(old);}}
@@ -238,7 +364,7 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
    for(int i=0;i<12;i++){double angle=2*Math.PI*i/12+now/2000.0;Location l=a.center.clone().add(7*Math.cos(angle),0.7,7*Math.sin(angle));w.spawnParticle(Particle.HEART,l,1,0,0,0,0);}
   }
   for(Player p:Bukkit.getOnlinePlayers()){
-   String held=equipped(p);if(!held.isEmpty()&&(now/2000)%2==0){Color accent=switch(held){case "sculk"->Color.fromRGB(30,205,235);case "speed"->Color.fromRGB(255,220,45);case "strength"->Color.fromRGB(240,45,60);case "health"->Color.fromRGB(255,115,205);default->Color.fromRGB(115,215,255);};p.getWorld().spawnParticle(Particle.DUST,p.getLocation().add(0,0.35,0),3,0.2,0.1,0.2,0,new Particle.DustOptions(accent,1.1f));}
+   String held=passiveScroll(p);if(!held.isEmpty()&&(now/2000)%2==0){Color accent=switch(held){case "sculk"->Color.fromRGB(30,205,235);case "speed"->Color.fromRGB(255,220,45);case "strength"->Color.fromRGB(240,45,60);case "health"->Color.fromRGB(255,115,205);default->Color.fromRGB(115,215,255);};p.getWorld().spawnParticle(Particle.DUST,p.getLocation().add(0,0.35,0),3,0.2,0.1,0.2,0,new Particle.DustOptions(accent,1.1f));}
    if(hidden.getOrDefault(p.getUniqueId(),0L)>now){p.spawnParticle(Particle.REVERSE_PORTAL,p.getLocation().add(0,1,0),10,0.5,0.8,0.5,0.015);}
    if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now)spiral(p,Color.fromRGB(230,25,45),now);
    if(frenzy.getOrDefault(p.getUniqueId(),0L)>now){spiral(p,Color.fromRGB(255,215,25),now);p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,p.getLocation().add(0,0.5,0),22,0.7,0.5,0.7,0.04);}
@@ -251,6 +377,6 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
  if(frenzy.getOrDefault(p.getUniqueId(),0L)>now)p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,p.getLocation().add(0,1,0),18,0.5,0.7,0.5,0.1);
  if(rooted.getOrDefault(p.getUniqueId(),0L)>now)p.getWorld().spawnParticle(Particle.SNOWFLAKE,p.getLocation().add(0,1,0),24,0.6,0.9,0.6,0.01);
  }bubbles.removeIf(b->b.until<now);for(Bubble b:bubbles){World w=b.center.getWorld();if(w==null)continue;for(Entity entity:w.getNearbyEntities(b.center,8,5,8)){if(!(entity instanceof Mob mob))continue;Vector offset=mob.getLocation().toVector().subtract(b.center.toVector());if(offset.lengthSquared()<49){if(offset.lengthSquared()<0.01)offset=new Vector(1,0,0);mob.setVelocity(offset.normalize().multiply(0.8).setY(0.2));}}for(int ring=0;ring<=12;ring++){double phi=(Math.PI/2)*ring/12.0;double radius=7*Math.cos(phi),height=7*Math.sin(phi);int points=Math.max(8,(int)(radius*12));for(int i=0;i<points;i++){double a=i*2*Math.PI/points;Location point=b.center.clone().add(Math.cos(a)*radius,height,Math.sin(a)*radius);w.spawnParticle(Particle.DUST,point,1,0,0,0,new Particle.DustOptions(Color.fromRGB(120,210,255),1.15f));if(i%8==0)w.spawnParticle(Particle.SNOWFLAKE,point,1,0,0,0,0);}}}
- for(Player p:Bukkit.getOnlinePlayers()){UUID id=p.getUniqueId();if(hidden.containsKey(id)){if(hidden.get(id)<=now)reveal(p);else hide(p);}String t=equipped(p);AttributeInstance health=p.getAttribute(Attribute.MAX_HEALTH);if(health!=null){double desired=switch(t){case "sculk"->26;case "strength"->24;case "health"->30;case "frost"->28;default->-1;};if(desired>0){baseHealth.putIfAbsent(id,health.getBaseValue());if(health.getBaseValue()!=desired)health.setBaseValue(desired);}else restoreHealth(p);}
+ for(Player p:Bukkit.getOnlinePlayers()){UUID id=p.getUniqueId();if(hidden.containsKey(id)){if(hidden.get(id)<=now)reveal(p);else hide(p);}String t=passiveScroll(p);AttributeInstance health=p.getAttribute(Attribute.MAX_HEALTH);if(health!=null){double desired=switch(t){case "sculk"->26;case "strength"->24;case "health"->30;case "frost"->28;default->-1;};if(desired>0){baseHealth.putIfAbsent(id,health.getBaseValue());if(health.getBaseValue()!=desired)health.setBaseValue(desired);}else restoreHealth(p);}
  Material under=p.getLocation().clone().subtract(0,0.15,0).getBlock().getType();switch(t){case "sculk"->{if(isSculk(under))effect(p,PotionEffectType.SPEED,1);}case "speed"->{boolean ocean=p.getLocation().getBlock().isLiquid()&&p.getWorld().getBiome(p.getLocation()).name().contains("OCEAN");effect(p,PotionEffectType.SPEED,ocean?1:0);}case "strength"->effect(p,PotionEffectType.STRENGTH,0);case "health"->{effect(p,PotionEffectType.REGENERATION,0);convertApples(p);}case "frost"->{if(icy(under))effect(p,PotionEffectType.SPEED,1);p.setFreezeTicks(0);}}}}
 }
