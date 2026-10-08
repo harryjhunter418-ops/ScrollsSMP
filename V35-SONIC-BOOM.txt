@@ -1,0 +1,5 @@
+Sonic Boom: 6 hearts (12 health points) on one server tick.
+The existing trueDamage helper triples its amount. Therefore Sonic Boom passes 4 raw points to produce exactly 12 points (6 hearts) of direct health loss.
+This occurs immediately on activation, not across the 14-tick visual animation.
+PvP must be enabled. Armour and Protection IV do not reduce direct health subtraction.
+Not compiled or gameplay-tested in Minecraft.

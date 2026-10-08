@@ -1,0 +1,1 @@
+Re-Roller item: any player can right-click it, no OP required. Detects scrolls in 36 inventory slots and offhand, including older scrolls. Admin /reroll remains OP-only. The Re-Roller is consumed only on successful reroll. Java compilation and in-game test not performed.

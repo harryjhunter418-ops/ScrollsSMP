@@ -47,7 +47,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);Bukkit.getScheduler().runTaskTimer(this,this::passiveTick,2L,10L);getLogger().info("ScrollsSMP v33 independent passive scheduler enabled");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);Bukkit.getScheduler().runTaskTimer(this,this::passiveTick,2L,10L);getLogger().info("ScrollsSMP v34 player Re-Roller fix enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
  private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
  // Passives are active anywhere in the player inventory, including the offhand.
@@ -169,7 +169,34 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  }
  private void openRevive(Player p){Inventory inv=Bukkit.createInventory(null,54,REVIVE_GUI);int slot=0;for(UUID id:reviveBans){if(slot>=54)break;OfflinePlayer offline=Bukkit.getOfflinePlayer(id);ItemStack head=new ItemStack(Material.PLAYER_HEAD);SkullMeta meta=(SkullMeta)head.getItemMeta();meta.setOwningPlayer(offline);meta.setDisplayName(ChatColor.GREEN+offline.getName());meta.getPersistentDataContainer().set(new NamespacedKey(this,"revive_target"),PersistentDataType.STRING,id.toString());head.setItemMeta(meta);inv.setItem(slot++,head);}p.openInventory(inv);}
  @EventHandler public void revivalClick(InventoryClickEvent e){if(!e.getView().getTitle().equals(REVIVE_GUI))return;e.setCancelled(true);if(!(e.getWhoClicked() instanceof Player p)||e.getClickedInventory()!=e.getView().getTopInventory()||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;String id=e.getCurrentItem().getItemMeta().getPersistentDataContainer().get(new NamespacedKey(this,"revive_target"),PersistentDataType.STRING);if(id==null)return;UUID uuid;try{uuid=UUID.fromString(id);}catch(IllegalArgumentException ex){return;}if(!reviveBans.contains(uuid)||!utilityType(p.getInventory().getItemInMainHand()).equals("resurrection")){p.sendMessage(ChatColor.RED+"Resurrection item required in your main hand.");return;}reviveBans.remove(uuid);setWords(uuid,REVIVE_WORDS);consume(p);saveData();p.closeInventory();wordBurst(p,Color.fromRGB(50,255,225));p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,p.getLocation().add(0,1,0),100,1,1.5,1,0.1);p.playSound(p.getLocation(),Sound.ITEM_TOTEM_USE,1f,1f);p.sendMessage(ChatColor.GREEN+"Revived "+Bukkit.getOfflinePlayer(uuid).getName()+" with 3 Words!");}
- @EventHandler public void utilityClick(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String kind=utilityType(p.getInventory().getItemInMainHand());if(kind.isEmpty())return;e.setCancelled(true);switch(kind){case "word"->{if(words(p.getUniqueId())>=MAX_WORDS){p.sendMessage(ChatColor.RED+"You already have the maximum of 10 Words.");return;}setWords(p.getUniqueId(),words(p.getUniqueId())+1);p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,p.getLocation().add(0,1,0),65,0.7,1,0.7,0.3);p.playSound(p.getLocation(),Sound.ENTITY_PLAYER_LEVELUP,1f,1.6f);wordBurst(p,Color.fromRGB(255,205,30));consume(p);p.sendMessage(ChatColor.GOLD+"Words: "+words(p.getUniqueId()));}case "resurrection"->openRevive(p);case "reroller"->{int slot=-1;for(int j=0;j<p.getInventory().getSize();j++){ItemStack item=p.getInventory().getItem(j);if(item!=null&&item.hasItemMeta()&&TYPES.contains(item.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING))){slot=j;break;}}if(slot<0){p.sendMessage(ChatColor.RED+"You need a scroll in your inventory.");return;}String old=p.getInventory().getItem(slot).getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);List<String> possible=new ArrayList<>(TYPES);possible.remove(old);String next=possible.get(rng.nextInt(possible.size()));p.getInventory().setItem(slot,make(next));consume(p);reveal(p,next,true);p.sendMessage(ChatColor.LIGHT_PURPLE+"Rerolled into "+label(next)+" Scroll!");}}}
+ @EventHandler public void utilityClick(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String kind=utilityType(p.getInventory().getItemInMainHand());if(kind.isEmpty())return;e.setCancelled(true);switch(kind){case "word"->{if(words(p.getUniqueId())>=MAX_WORDS){p.sendMessage(ChatColor.RED+"You already have the maximum of 10 Words.");return;}setWords(p.getUniqueId(),words(p.getUniqueId())+1);p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,p.getLocation().add(0,1,0),65,0.7,1,0.7,0.3);p.playSound(p.getLocation(),Sound.ENTITY_PLAYER_LEVELUP,1f,1.6f);wordBurst(p,Color.fromRGB(255,205,30));consume(p);p.sendMessage(ChatColor.GOLD+"Words: "+words(p.getUniqueId()));}case "resurrection"->openRevive(p);case "reroller"->{
+  // Item use is for every player, regardless of operator status.
+  // The admin-only /reroll command is handled separately.
+  int slot=-1;
+  String old="";
+  for(int j=0;j<36;j++){
+   String found=validScroll(p.getInventory().getItem(j));
+   if(!found.isEmpty()){slot=j;old=found;break;}
+  }
+  boolean offhand=false;
+  if(slot<0){
+   String found=validScroll(p.getInventory().getItemInOffHand());
+   if(!found.isEmpty()){offhand=true;old=found;}
+  }
+  if(slot<0&&!offhand){
+   p.sendMessage(ChatColor.RED+"Keep a Scroll in your inventory or offhand to use the Re-Roller.");
+   return;
+  }
+  List<String> possible=new ArrayList<>(TYPES);
+  possible.remove(old);
+  String next=possible.get(rng.nextInt(possible.size()));
+  // Consume the actual Re-Roller first. Never consume the new scroll.
+  consume(p);
+  if(offhand)p.getInventory().setItemInOffHand(make(next));
+  else p.getInventory().setItem(slot,make(next));
+  reveal(p,next,true);
+  p.sendMessage(ChatColor.LIGHT_PURPLE+"Rerolled into "+label(next)+" Scroll!");
+ }}}
  private void reveal(Player p,String type,boolean reroll){
   String[] cycle={"sculk","speed","strength","health","frost"};
   p.sendTitle(reroll?ChatColor.LIGHT_PURPLE+"REROLLING...":ChatColor.AQUA+"YOUR SCROLL",ChatColor.GRAY+"The magic is choosing...",5,30,5);
