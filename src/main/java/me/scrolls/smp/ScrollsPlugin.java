@@ -41,6 +41,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
         meta.setDisplayName(ChatColor.GOLD + "✦ " + ChatColor.BOLD + Character.toUpperCase(t.charAt(0)) + t.substring(1) + " Scroll");
         meta.setLore(List.of(ChatColor.GRAY + "Right click: Ability 1", ChatColor.GRAY + "Sneak + right click: Ability 2", ChatColor.AQUA + "Hold in main hand for passives"));
         meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, t);
+        meta.setCustomModelData(Arrays.asList(TYPES).indexOf(t) + 1);
         meta.addEnchant(org.bukkit.enchantments.Enchantment.UNBREAKING, 1, true);
         meta.addItemFlags(ItemFlag.HIDE_ENCHANTS);
         item.setItemMeta(meta);
