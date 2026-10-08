@@ -1,0 +1,4 @@
+Scrolls SMP v11 pack: install ZIP directly in Minecraft Resource Packs.
+Disable older Scrolls SMP packs. Reload with F3+T.
+Models are Minecraft voxel models, not shader-quality rendered art.
+Not tested in the Minecraft client.

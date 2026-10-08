@@ -1,0 +1,10 @@
+{
+  "pack": {
+    "pack_format": 75,
+    "supported_formats": [
+      46,
+      99
+    ],
+    "description": "Scrolls SMP v10 - 3D scrolls and relics"
+  }
+}
