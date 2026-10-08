@@ -1,13 +1,20 @@
 name: ScrollsSMP
-version: 1.0.0
+version: 8.0.0
 main: me.scrolls.smp.ScrollsPlugin
 api-version: '1.21'
-author: ScrollsSMP
-description: Five elemental scrolls with two abilities and three passives each.
 commands:
+  words:
+    description: Check your Word count
+  withdraw:
+    description: Withdraw Words as redeemable items
+    usage: /withdraw <amount>
+  reroll:
+    description: Operator reroll for a player
+    usage: /reroll <player>
+    permission: scrolls.admin
   scroll:
-    description: Give or equip elemental scrolls
-    usage: /scroll give <player> <sculk|frost|nature|shadow|storm>
+    description: Give and inspect custom scrolls
+    usage: /scroll give <player> <sculk|speed|strength|health|frost>
 permissions:
   scrolls.admin:
     default: op

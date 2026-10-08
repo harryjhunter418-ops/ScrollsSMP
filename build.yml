@@ -1,5 +1,7 @@
 name: Build ScrollsSMP
-on: [push, workflow_dispatch]
+on:
+  push:
+  workflow_dispatch:
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -13,5 +15,5 @@ jobs:
       - run: mvn -B package
       - uses: actions/upload-artifact@v4
         with:
-          name: ScrollsSMP-jar
+          name: ScrollsSMP-Plugin-JAR
           path: target/*.jar

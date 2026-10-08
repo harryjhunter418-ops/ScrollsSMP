@@ -1,1 +1,1 @@
-ScrollsSMP v6 source for Paper 1.21.11. GitHub Actions builds a JAR. Custom models are in the separate v6 resource pack. Effects use native Minecraft particles; dome is a particle hemisphere, not actual ice blocks. Not live-server tested.
+ScrollsSMP v10: animated Sonic Boom projectile, grappling chain, persistent Guardian Heart, stronger Ice Bubble, v9 effects and Words system. Build via GitHub Actions. This source has not been live-tested in Minecraft. Resource pack must be installed client-side.
