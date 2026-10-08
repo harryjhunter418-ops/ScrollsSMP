@@ -1,13 +1,13 @@
 name: ScrollsSMP
-version: 2.0.0-test1
+version: 4.0.0
 main: me.scrolls.smp.ScrollsPlugin
 api-version: '1.21'
-author: ScrollsSMP
 commands:
+  words:
+    description: Check your Word count
   scroll:
-    description: Give a custom scroll
-    usage: /scroll give <player> <sculk|speed>
-    permission: scrolls.admin
+    description: Give and inspect custom scrolls
+    usage: /scroll give <player> <sculk|speed|strength|health|frost>
 permissions:
   scrolls.admin:
     default: op
