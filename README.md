@@ -1,1 +1,1 @@
-Scrolls SMP v4: build with GitHub Actions or mvn package. Upload compiled JAR to Paper plugins. Commands: /scroll give <player> <type>, /words. Craft 3 relics using provided recipes. Words bans are plugin-managed, not admin bans. Revivals restore 3 Words. Always back up worlds and plugin data before upgrading.
+ScrollsSMP v5: max 10 Words, new scroll/re-roller reveal animations, and matching repaired 3D model UVs. Build with GitHub Actions; upload JAR to Paper 1.21.11. Install matching resource pack locally. Back up server first. Not yet live-tested.
