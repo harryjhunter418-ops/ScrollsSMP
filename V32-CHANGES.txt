@@ -1,0 +1,9 @@
+v32 changes:
+- Every scroll in inventory/hotbar/offhand contributes its passives simultaneously.
+- Max health uses the highest bonus; speed uses the strongest available.
+- Legacy PAPER scroll custom model data 101-105 recognised even without lore/PDC.
+- Direct ability damage multiplied by 3: Sonic Boom 8 -> 24 health points (12 hearts), lightning 1 -> 3, Circle of Love 1 -> 3, bleed 1 -> 3.
+- Active Blitz extra damage and Bloodlust auto-crit bonus tripled.
+- /scroll passive lists all detected scrolls.
+- PvP must be enabled for player-targeted damage.
+- NOT COMPILED OR GAMEPLAY TESTED in this environment.

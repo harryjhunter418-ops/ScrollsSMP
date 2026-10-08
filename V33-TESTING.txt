@@ -1,0 +1,1 @@
+Passives moved to independent repeating scheduler (10 ticks). /scroll passive reports scroll detection, maximum health, Speed, Strength and Regeneration. Requires Paper 1.21.11. Source not compiled or tested in Minecraft.

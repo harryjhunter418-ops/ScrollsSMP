@@ -47,11 +47,23 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v31 combat and inventory passive fixes enabled");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);Bukkit.getScheduler().runTaskTimer(this,this::passiveTick,2L,10L);getLogger().info("ScrollsSMP v33 independent passive scheduler enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
  private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
  // Passives are active anywhere in the player inventory, including the offhand.
- // Main hand wins, then offhand, then hotbar/inventory, so only one scroll's passives apply.
+ // Every scroll carried in inventory or offhand contributes its passives.
+ private Set<String> carriedScrolls(Player p){
+  Set<String> found=new HashSet<>();
+  PlayerInventory inv=p.getInventory();
+  for(ItemStack item:inv.getContents()){
+   String type=validScroll(item);
+   if(!type.isEmpty())found.add(type);
+  }
+  String offhand=validScroll(inv.getItemInOffHand());
+  if(!offhand.isEmpty())found.add(offhand);
+  return found;
+ }
+ private boolean hasScroll(Player p,String type){return carriedScrolls(p).contains(type);}
  private String passiveScroll(Player p){
   PlayerInventory inv=p.getInventory();
   String main=validScroll(inv.getItemInMainHand());
@@ -69,21 +81,18 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
   ItemMeta meta=item.getItemMeta();
   String type=meta.getPersistentDataContainer().get(key,PersistentDataType.STRING);
   if(type!=null&&TYPES.contains(type))return type;
-  // Legacy scrolls: model data plus an identifiable Scroll display name.
-  if(meta.hasCustomModelData()&&meta.hasDisplayName()){
+  // Legacy plugin scrolls: original model data 101..105 on PAPER.
+  // Model data is unique to these five plugin scrolls in this pack.
+  if(meta.hasCustomModelData()){
    int index=meta.getCustomModelData()-101;
-   if(index>=0&&index<TYPES.size()){
-    String display=ChatColor.stripColor(meta.getDisplayName()).toLowerCase(Locale.ROOT);
-    String expected=TYPES.get(index);
-    if(display.contains(expected)&&display.contains("scroll"))return expected;
-   }
+   if(index>=0&&index<TYPES.size())return TYPES.get(index);
   }
   return "";
  }
  private String label(String t){return Character.toUpperCase(t.charAt(0))+t.substring(1);}
  private ChatColor color(String t){return switch(t){case "sculk"->ChatColor.DARK_GRAY;case "speed"->ChatColor.YELLOW;case "strength"->ChatColor.RED;case "health"->ChatColor.LIGHT_PURPLE;default->ChatColor.AQUA;};}
  private List<String> lore(String t){List<String> l=new ArrayList<>();l.add(ChatColor.GOLD+"ABILITIES  |  Right-click / Sneak + Right-click");switch(t){
- case "sculk"->{l.add(ChatColor.WHITE+"1. Sonic Boom"+ChatColor.GRAY+"  •  4 hearts  •  45s");l.add(ChatColor.WHITE+"2. True Invisibility"+ChatColor.GRAY+"  •  8s  •  60s");l.add(ChatColor.DARK_AQUA+"PASSIVES");l.add(ChatColor.GRAY+"13 total hearts • Warden immune • Speed II on sculk");}
+ case "sculk"->{l.add(ChatColor.WHITE+"1. Sonic Boom"+ChatColor.GRAY+"  •  12 hearts  •  45s");l.add(ChatColor.WHITE+"2. True Invisibility"+ChatColor.GRAY+"  •  8s  •  60s");l.add(ChatColor.DARK_AQUA+"PASSIVES");l.add(ChatColor.GRAY+"13 total hearts • Warden immune • Speed II on sculk");}
  case "speed"->{l.add(ChatColor.WHITE+"1. Frenzy"+ChatColor.GRAY+"  •  6s  •  59s");l.add(ChatColor.WHITE+"2. Lightning Field"+ChatColor.GRAY+"  •  5s  •  70s");l.add(ChatColor.YELLOW+"PASSIVES");l.add(ChatColor.GRAY+"Speed I always • Speed II in oceans");}
  case "strength"->{l.add(ChatColor.WHITE+"1. Bloodlust Auto-Crit"+ChatColor.GRAY+"  •  10s  •  50s");l.add(ChatColor.WHITE+"2. Grappling Hook"+ChatColor.GRAY+"  •  20 blocks / swing  •  45s");l.add(ChatColor.RED+"PASSIVES");l.add(ChatColor.GRAY+"Strength I • 12 hearts • Bleed every 20 hits");}
  case "health"->{l.add(ChatColor.WHITE+"1. Regeneration III + Resistance II"+ChatColor.GRAY+"  •  5s  •  35s");l.add(ChatColor.WHITE+"2. Circle of Love"+ChatColor.GRAY+"  •  7-block radius  •  10s  •  50s");l.add(ChatColor.LIGHT_PURPLE+"PASSIVES");l.add(ChatColor.GRAY+"15 hearts • Regeneration I • Apples become golden");}
@@ -218,9 +227,12 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  @Override public boolean onCommand(CommandSender s,Command c,String label,String[] args){
  if(c.getName().equalsIgnoreCase("scrollgive"))return giveUtilityCommand(s,args);
  if(c.getName().equalsIgnoreCase("scroll") && args.length>0){
-  if(args[0].equalsIgnoreCase("status")){s.sendMessage(ChatColor.GREEN+"ScrollsSMP v31 loaded | world PvP="+(s instanceof Player pl?pl.getWorld().getPVP():"console")+" | commands active");return true;}
+  if(args[0].equalsIgnoreCase("status")){s.sendMessage(ChatColor.GREEN+"ScrollsSMP v33 loaded | world PvP="+(s instanceof Player pl?pl.getWorld().getPVP():"console")+" | commands active");return true;}
   if(args[0].equalsIgnoreCase("withdraw")){if(!(s instanceof Player pl)){s.sendMessage("Players only");return true;}return withdrawWords(pl,Arrays.copyOfRange(args,1,args.length));}
-  if(args[0].equalsIgnoreCase("passive")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}String active=passiveScroll(p);s.sendMessage(ChatColor.AQUA+"v31 passive check: "+(active.isEmpty()?"NONE - no plugin scroll detected in main hand, offhand or storage inventory":label(active)+" scroll detected; passives refresh every 5 ticks"));return true;}
+  if(args[0].equalsIgnoreCase("passive")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}Set<String> active=carriedScrolls(p);s.sendMessage(ChatColor.AQUA+"v33 passive check: "+(active.isEmpty()?"NONE - no plugin scroll detected":"Detected: "+String.join(", ",active)));
+   AttributeInstance max=p.getAttribute(Attribute.MAX_HEALTH);
+   s.sendMessage(ChatColor.GRAY+"Max health="+(max==null?"missing":max.getValue())+" HP; Speed="+effectLevel(p,PotionEffectType.SPEED)+"; Strength="+effectLevel(p,PotionEffectType.STRENGTH)+"; Regen="+effectLevel(p,PotionEffectType.REGENERATION));
+   return true;}
   if(args[0].equalsIgnoreCase("reroll")){if(!s.hasPermission("scrolls.admin")){s.sendMessage("OP only");return true;}if(args.length!=2){s.sendMessage("/scroll reroll <player>");return true;}Player pl=Bukkit.getPlayerExact(args[1]);if(pl==null){s.sendMessage("Player offline");return true;}if(!rerollPlayer(pl)){String next=TYPES.get(rng.nextInt(TYPES.size()));pl.getInventory().addItem(make(next));reveal(pl,next,true);}s.sendMessage("Rerolled "+pl.getName());return true;}
  }
  if(c.getName().equalsIgnoreCase("abilities")){if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}openAbilities(p);return true;}
@@ -402,8 +414,8 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
  private void reveal(Player p){hidden.remove(p.getUniqueId());for(Player q:Bukkit.getOnlinePlayers())if(q!=p)q.showPlayer(this,p);}
  @EventHandler public void join(PlayerJoinEvent e){for(UUID id:hidden.keySet()){Player p=Bukkit.getPlayer(id);if(p!=null&&p!=e.getPlayer())e.getPlayer().hidePlayer(this,p);}}
  @EventHandler public void move(PlayerMoveEvent e){if(e.getTo()==null)return;UUID id=e.getPlayer().getUniqueId();if(rooted.getOrDefault(id,0L)>System.currentTimeMillis()){if(e.getFrom().getX()!=e.getTo().getX()||e.getFrom().getZ()!=e.getTo().getZ()){Location l=e.getFrom().clone();l.setYaw(e.getTo().getYaw());l.setPitch(e.getTo().getPitch());e.setTo(l);}return;}for(Bubble b:bubbles){if(!b.center.getWorld().equals(e.getTo().getWorld())||e.getPlayer().getUniqueId().equals(b.owner))continue;boolean was=e.getFrom().distanceSquared(b.center)<49,is=e.getTo().distanceSquared(b.center)<49;if(!was&&is){e.setTo(e.getFrom());e.getPlayer().sendActionBar(ChatColor.AQUA+"Ice bubble blocks entry");break;}}}
- @EventHandler public void mobTarget(EntityTargetLivingEntityEvent e){if(e.getEntity() instanceof Warden&&e.getTarget() instanceof Player p&&passiveScroll(p).equals("sculk"))e.setCancelled(true);}
- @EventHandler public void damage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player p))return;String t=passiveScroll(p);if(t.equals("sculk")&&e instanceof EntityDamageByEntityEvent by&&(by.getDamager() instanceof Warden||by.getDamager() instanceof org.bukkit.entity.Projectile projectile&&projectile.getShooter() instanceof Warden)){e.setCancelled(true);return;}if(t.equals("frost")&&(e.getCause()==EntityDamageEvent.DamageCause.FREEZE)){e.setCancelled(true);}}
+ @EventHandler public void mobTarget(EntityTargetLivingEntityEvent e){if(e.getEntity() instanceof Warden&&e.getTarget() instanceof Player p&&hasScroll(p,"sculk"))e.setCancelled(true);}
+ @EventHandler public void damage(EntityDamageEvent e){if(!(e.getEntity() instanceof Player p))return;String t=passiveScroll(p);if(hasScroll(p,"sculk")&&e instanceof EntityDamageByEntityEvent by&&(by.getDamager() instanceof Warden||by.getDamager() instanceof org.bukkit.entity.Projectile projectile&&projectile.getShooter() instanceof Warden)){e.setCancelled(true);return;}if(hasScroll(p,"frost")&&(e.getCause()==EntityDamageEvent.DamageCause.FREEZE)){e.setCancelled(true);}}
  // True damage: direct health reduction, ignoring armor, resistance and absorption.
  // Only use for scroll abilities; normal sword damage remains vanilla.
  private void trueDamage(LivingEntity victim,double amount,Player caster){
@@ -417,9 +429,9 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
    }
   }
   double before=victim.getHealth();
-  double after=Math.max(0.0,before-amount);
+  double after=Math.max(0.0,before-amount*3.0);
   if(before<=0.0)return;
-  victim.setHealth(after); // 8 health points = 4 hearts, independent of armor and Protection IV.
+  victim.setHealth(after); // True damage is tripled, independent of armor and Protection IV.
   double applied=before-victim.getHealth();
   victim.getWorld().spawnParticle(Particle.DAMAGE_INDICATOR,victim.getLocation().add(0,1,0),10,0.35,0.5,0.35,0.04);
   if(victim instanceof Player target){
@@ -444,15 +456,15 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
   if(e.getDamage()<=0)return;
   long now=System.currentTimeMillis();
   String passive=passiveScroll(p);
-  if(passive.equals("speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now)
-   e.setDamage(e.getDamage()*1.35);
+  if(hasScroll(p,"speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now)
+   e.setDamage(e.getDamage()*2.05);
   // Activation state is independent of the scroll's inventory slot or passive priority.
   if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){
-   if(!e.isCritical())e.setDamage(e.getDamage()*1.5);
+   if(!e.isCritical())e.setDamage(e.getDamage()*2.5);
    victim.getWorld().spawnParticle(Particle.CRIT,victim.getLocation().add(0,1,0),24,0.3,0.45,0.3,0.12);
    p.sendActionBar(ChatColor.RED+"Bloodlust: empowered melee hit");
   }
-  if(passive.equals("strength")){
+  if(hasScroll(p,"strength")){
    int n=hits.merge(p.getUniqueId(),1,Integer::sum);
    if(n%20==0){
     for(int j=1;j<=6;j++)Bukkit.getScheduler().runTaskLater(this,()->{
@@ -467,7 +479,8 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
  private void restoreHealth(Player p){Double old=baseHealth.remove(p.getUniqueId());if(old!=null){AttributeInstance a=p.getAttribute(Attribute.MAX_HEALTH);if(a!=null)a.setBaseValue(old);}}
  private boolean isSculk(Material m){return m.name().startsWith("SCULK");}
  private boolean icy(Material m){String s=m.name();return s.contains("ICE")||s.contains("SNOW");}
- private void effect(Player p,PotionEffectType type,int amplifier){PotionEffect old=p.getPotionEffect(type);if(old==null||old.getAmplifier()!=amplifier||old.getDuration()<60)p.addPotionEffect(new PotionEffect(type,120,amplifier,true,true,true));}
+ private String effectLevel(Player p,PotionEffectType type){PotionEffect e=p.getPotionEffect(type);return e==null?"none":String.valueOf(e.getAmplifier()+1);}
+ private void effect(Player p,PotionEffectType type,int amplifier){PotionEffect old=p.getPotionEffect(type);if(old==null||old.getAmplifier()<amplifier||old.getDuration()<60)p.addPotionEffect(new PotionEffect(type,120,amplifier,true,true,true));}
  private void wordBurst(Player p,Color color){
   World w=p.getWorld();Location at=p.getLocation().clone();
   for(int level=0;level<3;level++)ring(w,at,0.9+level*0.32,0.4+level*0.55,color,32);
@@ -497,11 +510,47 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
    if(rooted.getOrDefault(p.getUniqueId(),0L)>now){ring(p.getWorld(),p.getLocation(),0.85,0.2,Color.fromRGB(95,200,255),36);ring(p.getWorld(),p.getLocation(),0.85,1.0,Color.fromRGB(110,215,255),36);ring(p.getWorld(),p.getLocation(),0.85,1.8,Color.fromRGB(160,235,255),36);p.getWorld().spawnParticle(Particle.SNOWFLAKE,p.getLocation().add(0,1,0),14,0.5,0.8,0.5,0.01);}
   }
  }
+
+ // Passives run independently of the particle/animation scheduler.
+ private void passiveTick(){
+  for(Player p:Bukkit.getOnlinePlayers()){
+   try{applyPassives(p);}catch(Exception ex){getLogger().warning("Passives failed for "+p.getName()+": "+ex.getMessage());ex.printStackTrace();}
+  }
+ }
+ private void applyPassives(Player p){
+  UUID id=p.getUniqueId();
+  Set<String> active=carriedScrolls(p);
+  String summary=active.isEmpty()?"":String.join(", ",TYPES.stream().filter(active::contains).toList());
+  String previous=lastPassive.put(id,summary);
+  if(previous!=null&&!previous.equals(summary))p.sendMessage(active.isEmpty()?ChatColor.GRAY+"Scroll passives deactivated.":ChatColor.GREEN+"Active passives: "+summary+" (inventory/offhand)");
+  AttributeInstance health=p.getAttribute(Attribute.MAX_HEALTH);
+  if(health!=null){
+   double desired=active.contains("health")?30:active.contains("frost")?28:active.contains("sculk")?26:active.contains("strength")?24:-1;
+   if(desired>0){baseHealth.putIfAbsent(id,health.getBaseValue());if(health.getBaseValue()!=desired)health.setBaseValue(desired);}
+   else restoreHealth(p);
+  }
+  Material under=p.getLocation().clone().subtract(0,0.15,0).getBlock().getType();
+  int speed=-1;
+  if(active.contains("speed")){
+   boolean ocean=p.getLocation().getBlock().isLiquid()&&p.getWorld().getBiome(p.getLocation()).name().contains("OCEAN");
+   speed=ocean?1:0;
+  }
+  if(active.contains("sculk")&&isSculk(under))speed=Math.max(speed,1);
+  if(active.contains("frost")&&icy(under))speed=Math.max(speed,1);
+  if(speed>=0)effect(p,PotionEffectType.SPEED,speed);
+  if(active.contains("strength"))effect(p,PotionEffectType.STRENGTH,0);
+  if(active.contains("health")){effect(p,PotionEffectType.REGENERATION,0);convertApples(p);}
+  if(active.contains("frost"))p.setFreezeTicks(0);
+ }
  private void tick(){long now=System.currentTimeMillis();renderEffects(now);for(Player p:Bukkit.getOnlinePlayers()){
  if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){Location l=p.getLocation().add(0,1,0);p.getWorld().spawnParticle(Particle.DUST,l,15,0.55,0.7,0.55,new Particle.DustOptions(Color.RED,1.4f));p.getWorld().spawnParticle(Particle.CRIMSON_SPORE,l,10,0.7,0.8,0.7,0.02);}
  if(frenzy.getOrDefault(p.getUniqueId(),0L)>now)p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,p.getLocation().add(0,1,0),18,0.5,0.7,0.5,0.1);
  if(rooted.getOrDefault(p.getUniqueId(),0L)>now)p.getWorld().spawnParticle(Particle.SNOWFLAKE,p.getLocation().add(0,1,0),24,0.6,0.9,0.6,0.01);
  }bubbles.removeIf(b->b.until<now);for(Bubble b:bubbles){World w=b.center.getWorld();if(w==null)continue;for(Entity entity:w.getNearbyEntities(b.center,8,5,8)){if(!(entity instanceof Mob mob))continue;Vector offset=mob.getLocation().toVector().subtract(b.center.toVector());if(offset.lengthSquared()<49){if(offset.lengthSquared()<0.01)offset=new Vector(1,0,0);mob.setVelocity(offset.normalize().multiply(0.8).setY(0.2));}}for(int ring=0;ring<=12;ring++){double phi=(Math.PI/2)*ring/12.0;double radius=7*Math.cos(phi),height=7*Math.sin(phi);int points=Math.max(8,(int)(radius*12));for(int i=0;i<points;i++){double a=i*2*Math.PI/points;Location point=b.center.clone().add(Math.cos(a)*radius,height,Math.sin(a)*radius);w.spawnParticle(Particle.DUST,point,1,0,0,0,new Particle.DustOptions(Color.fromRGB(120,210,255),1.15f));if(i%8==0)w.spawnParticle(Particle.SNOWFLAKE,point,1,0,0,0,0);}}}
- for(Player p:Bukkit.getOnlinePlayers()){UUID id=p.getUniqueId();if(hidden.containsKey(id)){if(hidden.get(id)<=now)reveal(p);else hide(p);}String t=passiveScroll(p);String previous=lastPassive.put(p.getUniqueId(),t);if(previous!=null&&!previous.equals(t)){p.sendMessage(t.isEmpty()?ChatColor.GRAY+"Scroll passives deactivated.":ChatColor.GREEN+"Active passives: "+label(t)+" Scroll (inventory/offhand supported)");}AttributeInstance health=p.getAttribute(Attribute.MAX_HEALTH);if(health!=null){double desired=switch(t){case "sculk"->26;case "strength"->24;case "health"->30;case "frost"->28;default->-1;};if(desired>0){baseHealth.putIfAbsent(id,health.getBaseValue());if(health.getBaseValue()!=desired)health.setBaseValue(desired);}else restoreHealth(p);}
- Material under=p.getLocation().clone().subtract(0,0.15,0).getBlock().getType();switch(t){case "sculk"->{if(isSculk(under))effect(p,PotionEffectType.SPEED,1);}case "speed"->{boolean ocean=p.getLocation().getBlock().isLiquid()&&p.getWorld().getBiome(p.getLocation()).name().contains("OCEAN");effect(p,PotionEffectType.SPEED,ocean?1:0);}case "strength"->effect(p,PotionEffectType.STRENGTH,0);case "health"->{effect(p,PotionEffectType.REGENERATION,0);convertApples(p);}case "frost"->{if(icy(under))effect(p,PotionEffectType.SPEED,1);p.setFreezeTicks(0);}}}}
+ for(Player p:Bukkit.getOnlinePlayers()){
+  UUID id=p.getUniqueId();
+  if(hidden.containsKey(id)){if(hidden.get(id)<=now)reveal(p);else hide(p);}
+
+ }
+
 }

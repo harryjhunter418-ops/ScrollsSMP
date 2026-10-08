@@ -1,5 +1,5 @@
 name: ScrollsSMP
-version: 31.0.0
+version: 33.0.0
 main: me.scrolls.smp.ScrollsPlugin
 api-version: '1.21'
 commands:
