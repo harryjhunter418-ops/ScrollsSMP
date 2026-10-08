@@ -1,0 +1,7 @@
+ScrollsSMP v30 — changes
+- Sonic Boom: direct health reduction of 8 health points, i.e. 4 hearts, after armour.
+- Bloodlust: modifies actual melee event damage by 1.5x when not already critical.
+- Passives: scan main hand, offhand, all 36 storage slots, and recognize older scrolls by model data.
+- Potion effects refreshed for 120 ticks.
+NOTE: Requires Paper 1.21.11, Java 21, and PvP enabled. Not live-gameplay tested.
+Test with a fresh ScrollsSMP-generated scroll, then an older scroll.

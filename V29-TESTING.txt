@@ -1,0 +1,1 @@
+v29: Sonic Boom uses player hitbox ray tracing and does not consume cooldown on a miss. Direct health damage bypasses armor/Protection IV. World PvP must be enabled. Test on Paper 1.21.11. NOT compiled or live tested.\n

@@ -47,18 +47,39 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v27 enabled - use /scrollssmp:scroll status");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("scrollwithdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("scrollreroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v31 combat and inventory passive fixes enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
  private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
  // Passives are active anywhere in the player inventory, including the offhand.
  // Main hand wins, then offhand, then hotbar/inventory, so only one scroll's passives apply.
  private String passiveScroll(Player p){
-  String main=equipped(p);if(!main.isEmpty())return main;
-  String off=validScroll(p.getInventory().getItemInOffHand());if(!off.isEmpty())return off;
-  for(ItemStack item:p.getInventory().getStorageContents()){String type=validScroll(item);if(!type.isEmpty())return type;}
+  PlayerInventory inv=p.getInventory();
+  String main=validScroll(inv.getItemInMainHand());
+  if(!main.isEmpty())return main;
+  String off=validScroll(inv.getItemInOffHand());
+  if(!off.isEmpty())return off;
+  for(ItemStack item:inv.getStorageContents()){
+   String type=validScroll(item);
+   if(!type.isEmpty())return type;
+  }
   return "";
  }
- private String validScroll(ItemStack item){if(item==null||!item.hasItemMeta())return "";String type=item.getItemMeta().getPersistentDataContainer().get(key,PersistentDataType.STRING);return TYPES.contains(type)?type:"";}
+ private String validScroll(ItemStack item){
+  if(item==null||item.getType()!=Material.PAPER||!item.hasItemMeta())return "";
+  ItemMeta meta=item.getItemMeta();
+  String type=meta.getPersistentDataContainer().get(key,PersistentDataType.STRING);
+  if(type!=null&&TYPES.contains(type))return type;
+  // Legacy scrolls: model data plus an identifiable Scroll display name.
+  if(meta.hasCustomModelData()&&meta.hasDisplayName()){
+   int index=meta.getCustomModelData()-101;
+   if(index>=0&&index<TYPES.size()){
+    String display=ChatColor.stripColor(meta.getDisplayName()).toLowerCase(Locale.ROOT);
+    String expected=TYPES.get(index);
+    if(display.contains(expected)&&display.contains("scroll"))return expected;
+   }
+  }
+  return "";
+ }
  private String label(String t){return Character.toUpperCase(t.charAt(0))+t.substring(1);}
  private ChatColor color(String t){return switch(t){case "sculk"->ChatColor.DARK_GRAY;case "speed"->ChatColor.YELLOW;case "strength"->ChatColor.RED;case "health"->ChatColor.LIGHT_PURPLE;default->ChatColor.AQUA;};}
  private List<String> lore(String t){List<String> l=new ArrayList<>();l.add(ChatColor.GOLD+"ABILITIES  |  Right-click / Sneak + Right-click");switch(t){
@@ -197,9 +218,9 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  @Override public boolean onCommand(CommandSender s,Command c,String label,String[] args){
  if(c.getName().equalsIgnoreCase("scrollgive"))return giveUtilityCommand(s,args);
  if(c.getName().equalsIgnoreCase("scroll") && args.length>0){
-  if(args[0].equalsIgnoreCase("status")){s.sendMessage(ChatColor.GREEN+"ScrollsSMP v27 loaded | world PvP="+(s instanceof Player pl?pl.getWorld().getPVP():"console")+" | commands active");return true;}
+  if(args[0].equalsIgnoreCase("status")){s.sendMessage(ChatColor.GREEN+"ScrollsSMP v31 loaded | world PvP="+(s instanceof Player pl?pl.getWorld().getPVP():"console")+" | commands active");return true;}
   if(args[0].equalsIgnoreCase("withdraw")){if(!(s instanceof Player pl)){s.sendMessage("Players only");return true;}return withdrawWords(pl,Arrays.copyOfRange(args,1,args.length));}
-  if(args[0].equalsIgnoreCase("passive")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}String active=passiveScroll(p);s.sendMessage(ChatColor.AQUA+"v27 passive check: "+(active.isEmpty()?"NONE - no plugin scroll detected in main hand, offhand or storage inventory":label(active)+" scroll detected; passives refresh every 5 ticks"));return true;}
+  if(args[0].equalsIgnoreCase("passive")){if(!(s instanceof Player p)){s.sendMessage("Player only");return true;}String active=passiveScroll(p);s.sendMessage(ChatColor.AQUA+"v31 passive check: "+(active.isEmpty()?"NONE - no plugin scroll detected in main hand, offhand or storage inventory":label(active)+" scroll detected; passives refresh every 5 ticks"));return true;}
   if(args[0].equalsIgnoreCase("reroll")){if(!s.hasPermission("scrolls.admin")){s.sendMessage("OP only");return true;}if(args.length!=2){s.sendMessage("/scroll reroll <player>");return true;}Player pl=Bukkit.getPlayerExact(args[1]);if(pl==null){s.sendMessage("Player offline");return true;}if(!rerollPlayer(pl)){String next=TYPES.get(rng.nextInt(TYPES.size()));pl.getInventory().addItem(make(next));reveal(pl,next,true);}s.sendMessage("Rerolled "+pl.getName());return true;}
  }
  if(c.getName().equalsIgnoreCase("abilities")){if(!(s instanceof Player p)){s.sendMessage("Players only");return true;}openAbilities(p);return true;}
@@ -255,7 +276,16 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
   return true;
  }
  private boolean ready(Player p,String id,int seconds){Map<String,Long> m=cooldowns.computeIfAbsent(p.getUniqueId(),k->new HashMap<>());long now=System.currentTimeMillis(),end=m.getOrDefault(id,0L);if(end>now){p.sendActionBar(ChatColor.RED+"Cooldown "+((end-now+999)/1000)+"s");return false;}m.put(id,now+seconds*1000L);return true;}
- private Player target(Player p,double range){Player best=null;double dot=0.88;Vector look=p.getEyeLocation().getDirection();for(Player q:p.getWorld().getPlayers()){if(q==p||q.getGameMode()==GameMode.SPECTATOR||q.getLocation().distanceSquared(p.getLocation())>range*range)continue;Vector dir=q.getEyeLocation().toVector().subtract(p.getEyeLocation().toVector()).normalize();double d=dir.dot(look);if(d>dot&&p.hasLineOfSight(q)){best=q;dot=d;}}return best;}
+ // Aim at the actual player hitbox. A small ray-trace margin makes hits reliable in PvP.
+ private Player target(Player p,double range){
+  Location eye=p.getEyeLocation();Vector look=eye.getDirection().normalize();
+  RayTraceResult hit=p.getWorld().rayTraceEntities(eye,look,range,0.45,entity->entity instanceof Player q&&q!=p&&!q.isDead()&&q.getGameMode()!=GameMode.SPECTATOR&&q.getGameMode()!=GameMode.CREATIVE);
+  if(hit==null||!(hit.getHitEntity() instanceof Player q))return null;
+  if(!p.hasLineOfSight(q))return null;
+  RayTraceResult wall=p.getWorld().rayTraceBlocks(eye,look,range,FluidCollisionMode.NEVER,true);
+  if(wall!=null&&wall.getHitPosition()!=null&&wall.getHitPosition().distanceSquared(eye.toVector())+0.01<hit.getHitPosition().distanceSquared(eye.toVector()))return null;
+  return q;
+ }
  private Player grappleTarget(Player p,double range){
   Player best=null;double bestScore=-1;Location eye=p.getEyeLocation();Vector facing=eye.getDirection().normalize();
   for(Player other:p.getWorld().getPlayers()){
@@ -282,7 +312,7 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
   for(int i=0;i<=count;i++){Location point=from.clone().add(dir.clone().multiply(i*0.2));Color color=i%3==0?Color.fromRGB(255,65,75):Color.fromRGB(110,5,25);from.getWorld().spawnParticle(Particle.DUST,point,1,0,0,0,0,new Particle.DustOptions(color,2.0f));}
   Location tip=from.clone().add(dir.clone().multiply(Math.min(length,count*0.2)));from.getWorld().spawnParticle(Particle.CRIT,tip,3,0.1,0.1,0.1,0.02);
  }
- @EventHandler public void click(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String t=equipped(p);if(t.isEmpty())return;e.setCancelled(true);boolean second=p.isSneaking();String id=t+(second?"2":"1");int cd=switch(id){case "sculk1"->45;case "sculk2"->60;case "speed1"->59;case "speed2"->70;case "strength1"->50;case "strength2"->45;case "health1"->35;case "health2"->50;default->60;};if(id.equals("strength2")&&grappleTarget(p,20)==null&&grappleBlock(p,20)==null){p.sendActionBar(ChatColor.RED+"Aim at a player or solid block within 20 blocks");return;}
+ @EventHandler public void click(PlayerInteractEvent e){if(e.getHand()!=EquipmentSlot.HAND||(e.getAction()!=Action.RIGHT_CLICK_AIR&&e.getAction()!=Action.RIGHT_CLICK_BLOCK))return;Player p=e.getPlayer();String t=equipped(p);if(t.isEmpty())return;e.setCancelled(true);boolean second=p.isSneaking();String id=t+(second?"2":"1");int cd=switch(id){case "sculk1"->45;case "sculk2"->60;case "speed1"->59;case "speed2"->70;case "strength1"->50;case "strength2"->45;case "health1"->35;case "health2"->50;default->60;};if(id.equals("strength2")&&grappleTarget(p,20)==null&&grappleBlock(p,20)==null){p.sendActionBar(ChatColor.RED+"Aim at a player or solid block within 20 blocks");return;}if(id.equals("sculk1")&&target(p,16)==null){p.sendActionBar(ChatColor.RED+"Sonic Boom missed: aim at a player within 16 blocks");return;}
  if(!ready(p,id,cd))return;long now=System.currentTimeMillis();switch(id){
  case "sculk1"->{Player q=target(p,16);Location origin=p.getEyeLocation().clone();Vector direction=origin.getDirection().clone();for(int i=1;i<=14;i++){final int distance=i;Bukkit.getScheduler().runTaskLater(this,()->{if(!p.isOnline())return;Location wave=origin.clone().add(direction.clone().multiply(distance));p.getWorld().spawnParticle(Particle.SONIC_BOOM,wave,1);p.getWorld().spawnParticle(Particle.END_ROD,wave,15,0.55,0.55,0.55,0.025);ring(p.getWorld(),wave,0.8,0,Color.fromRGB(0,220,255),18);p.getWorld().spawnParticle(Particle.SOUL_FIRE_FLAME,wave,8,0.35,0.35,0.35,0.02);},i);}if(q!=null){trueDamage(q,8,p);}else p.sendMessage("Sonic Boom missed");}
  case "sculk2"->{hidden.put(p.getUniqueId(),now+8000);p.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY,160,0,false,false,false));p.getWorld().spawnParticle(Particle.SMOKE,p.getLocation().add(0,1,0),70,0.5,0.9,0.5,0.03);p.getWorld().playSound(p.getLocation(),Sound.ENTITY_ENDERMAN_TELEPORT,0.8f,0.65f);hide(p);p.spawnParticle(Particle.REVERSE_PORTAL,p.getEyeLocation(),60,0.6,0.7,0.6,0.05);p.sendMessage("True Invisibility for 8 seconds");}
@@ -389,7 +419,7 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
   double before=victim.getHealth();
   double after=Math.max(0.0,before-amount);
   if(before<=0.0)return;
-  victim.setHealth(after); // Direct health subtraction bypasses diamond armor, Protection IV and Resistance.
+  victim.setHealth(after); // 8 health points = 4 hearts, independent of armor and Protection IV.
   double applied=before-victim.getHealth();
   victim.getWorld().spawnParticle(Particle.DAMAGE_INDICATOR,victim.getLocation().add(0,1,0),10,0.35,0.5,0.35,0.04);
   if(victim instanceof Player target){
@@ -405,13 +435,39 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
    }
   },1L);
  }
- @EventHandler public void combat(EntityDamageByEntityEvent e){if(!(e.getDamager() instanceof Player p)||!(e.getEntity() instanceof LivingEntity victim))return;String t=passiveScroll(p);long now=System.currentTimeMillis();if(t.equals("speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.35;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}if(t.equals("strength")){if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){double extra=e.getDamage()*0.5;Bukkit.getScheduler().runTask(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,extra,p);});}int n=hits.merge(p.getUniqueId(),1,Integer::sum);if(n%20==0){for(int j=1;j<=6;j++)Bukkit.getScheduler().runTaskLater(this,()->{if(victim.isValid()&&!victim.isDead())trueDamage(victim,1,p);},j*20L);p.sendMessage("Bleed applied for 6 seconds");}}}
+ @EventHandler(priority=EventPriority.HIGHEST,ignoreCancelled=true)
+ public void combat(EntityDamageByEntityEvent e){
+  if(!(e.getDamager() instanceof Player p)||!(e.getEntity() instanceof LivingEntity victim))return;
+  // Only real direct melee hits qualify for Bloodlust or the Strength hit counter.
+  if(e.getCause()!=EntityDamageEvent.DamageCause.ENTITY_ATTACK &&
+     e.getCause()!=EntityDamageEvent.DamageCause.ENTITY_SWEEP_ATTACK)return;
+  if(e.getDamage()<=0)return;
+  long now=System.currentTimeMillis();
+  String passive=passiveScroll(p);
+  if(passive.equals("speed")&&frenzy.getOrDefault(p.getUniqueId(),0L)>now)
+   e.setDamage(e.getDamage()*1.35);
+  // Activation state is independent of the scroll's inventory slot or passive priority.
+  if(bloodlust.getOrDefault(p.getUniqueId(),0L)>now){
+   if(!e.isCritical())e.setDamage(e.getDamage()*1.5);
+   victim.getWorld().spawnParticle(Particle.CRIT,victim.getLocation().add(0,1,0),24,0.3,0.45,0.3,0.12);
+   p.sendActionBar(ChatColor.RED+"Bloodlust: empowered melee hit");
+  }
+  if(passive.equals("strength")){
+   int n=hits.merge(p.getUniqueId(),1,Integer::sum);
+   if(n%20==0){
+    for(int j=1;j<=6;j++)Bukkit.getScheduler().runTaskLater(this,()->{
+     if(victim.isValid()&&!victim.isDead())trueDamage(victim,1,p);
+    },j*20L);
+    p.sendMessage("Bleed applied for 6 seconds");
+   }
+  }
+ }
  // Convert regular apples in inventory while the Health Scroll is equipped.
  private void convertApples(Player p){PlayerInventory inv=p.getInventory();for(int slot=0;slot<36;slot++){ItemStack i=inv.getItem(slot);if(i!=null&&i.getType()==Material.APPLE){inv.setItem(slot,new ItemStack(Material.GOLDEN_APPLE,i.getAmount()));}}}
  private void restoreHealth(Player p){Double old=baseHealth.remove(p.getUniqueId());if(old!=null){AttributeInstance a=p.getAttribute(Attribute.MAX_HEALTH);if(a!=null)a.setBaseValue(old);}}
  private boolean isSculk(Material m){return m.name().startsWith("SCULK");}
  private boolean icy(Material m){String s=m.name();return s.contains("ICE")||s.contains("SNOW");}
- private void effect(Player p,PotionEffectType type,int amplifier){PotionEffect old=p.getPotionEffect(type);if(old==null||old.getAmplifier()<amplifier||old.getDuration()<12)p.addPotionEffect(new PotionEffect(type,100,amplifier,true,true,true));}
+ private void effect(Player p,PotionEffectType type,int amplifier){PotionEffect old=p.getPotionEffect(type);if(old==null||old.getAmplifier()!=amplifier||old.getDuration()<60)p.addPotionEffect(new PotionEffect(type,120,amplifier,true,true,true));}
  private void wordBurst(Player p,Color color){
   World w=p.getWorld();Location at=p.getLocation().clone();
   for(int level=0;level<3;level++)ring(w,at,0.9+level*0.32,0.4+level*0.55,color,32);

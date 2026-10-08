@@ -1,0 +1,10 @@
+V31 targeted changes and test plan
+
+1. /scroll status should say v31.
+2. Put a newly generated Strength Scroll in slot 20: /scroll passive should say Strength; Strength I and 12 hearts should appear.
+3. Move it to offhand and recheck. Repeat with an older Strength Scroll.
+4. Hold Strength Scroll, right click (without Shift) to activate Bloodlust; while standing still hit an unarmoured target with a sword and compare the damage to a normal hit. The empowered hit should be 1.5x raw damage, not a vanilla critical hit animation flag.
+5. Hold Sculk Scroll and use Sonic Boom on a full Protection IV diamond player with PvP enabled. The target should lose 8 health points (4 hearts) when hit, barring other plugin intervention or health already below 8.
+6. Check console for errors and test commands after building via GitHub Actions.
+
+IMPORTANT: Source ZIP integrity checked; not compiled or run on a Paper server in this environment.
