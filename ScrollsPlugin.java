@@ -41,11 +41,12 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private final List<Aura> auras=new ArrayList<>();
  private final Map<UUID,Long> guardians=new HashMap<>();
  private final Map<UUID,Long> swingUntil=new HashMap<>();
+ private final Set<UUID> grappleReleased=new HashSet<>();
  private record Aura(Location center,long until,UUID owner) {}
  private final Random rng=new Random();
  private static final List<String> TYPES=List.of("sculk","speed","strength","health","frost");
  private record Bubble(Location center,long until,UUID owner) {}
- @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v20 enabled");}
+ @Override public void onEnable(){key=new NamespacedKey(this,"scroll_type");utilityKey=new NamespacedKey(this,"utility_type");Objects.requireNonNull(getCommand("scroll")).setExecutor(this);Objects.requireNonNull(getCommand("words")).setExecutor(this);Objects.requireNonNull(getCommand("abilities")).setExecutor(this);Objects.requireNonNull(getCommand("withdraw")).setExecutor(this);Objects.requireNonNull(getCommand("reroll")).setExecutor(this);Objects.requireNonNull(getCommand("repair")).setExecutor(this);Objects.requireNonNull(getCommand("scrollgive")).setExecutor(this);getServer().getPluginManager().registerEvents(this,this);loadData();registerRecipes();Bukkit.getScheduler().runTaskTimer(this,this::tick,1L,5L);getLogger().info("ScrollsSMP v22 enabled");}
  @Override public void onDisable(){for(List<UUID> ids:domeDisplays.values())for(UUID id:ids){Entity en=Bukkit.getEntity(id);if(en!=null)en.remove();}domeDisplays.clear();for(Player p:Bukkit.getOnlinePlayers()){reveal(p);restoreHealth(p);}saveData();}
  private String equipped(Player p){return validScroll(p.getInventory().getItemInMainHand());}
  // Passives are active anywhere in the player inventory, including the offhand.
@@ -77,29 +78,63 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
  private void registerRecipes(){recipe("reroller",new String[]{"DND","PEP","DND"},Map.of('D',Material.DIAMOND_BLOCK,'N',Material.NETHERITE_SCRAP,'P',Material.PAPER,'E',Material.ENCHANTED_GOLDEN_APPLE));recipe("word",new String[]{"GDG","DBD","GDG"},Map.of('G',Material.GOLD_BLOCK,'D',Material.DIAMOND_BLOCK,'B',Material.WRITABLE_BOOK));recipe("resurrection",new String[]{"DTD","NRN","DSD"},Map.of('D',Material.DIAMOND_BLOCK,'T',Material.TRIDENT,'N',Material.NETHERITE_INGOT,'R',Material.RESPAWN_ANCHOR,'S',Material.NETHER_STAR));}
  private void consume(Player p){ItemStack i=p.getInventory().getItemInMainHand();if(i.getAmount()<=1)p.getInventory().setItemInMainHand(null);else i.setAmount(i.getAmount()-1);}
  private ItemStack guiItem(Material material,String name,String... lines){ItemStack item=new ItemStack(material);ItemMeta m=item.getItemMeta();m.setDisplayName(name);m.setLore(Arrays.asList(lines));item.setItemMeta(m);return item;}
+ private String cooldownText(Player p,String type,int ability){
+  long expiry=cooldowns.getOrDefault(p.getUniqueId(),Collections.emptyMap()).getOrDefault(type+ability,0L);
+  long seconds=Math.max(0,(expiry-System.currentTimeMillis()+999)/1000);
+  return seconds==0?ChatColor.GREEN+"READY":ChatColor.RED+"COOLDOWN  "+seconds+"s";
+ }
+ private ItemStack decorated(Material material,String title,List<String> lines){
+  ItemStack item=new ItemStack(material);ItemMeta meta=item.getItemMeta();meta.setDisplayName(title);meta.setLore(lines);item.setItemMeta(meta);return item;
+ }
+ private void guiFrame(Inventory inv){
+  ItemStack edge=guiItem(Material.BLACK_STAINED_GLASS_PANE," ");
+  ItemStack fill=guiItem(Material.GRAY_STAINED_GLASS_PANE," ");
+  for(int slot=0;slot<inv.getSize();slot++)inv.setItem(slot,(slot<9||slot>=45||slot%9==0||slot%9==8)?edge:fill);
+ }
  private void openAbilities(Player p){
-  Inventory inv=Bukkit.createInventory(null,54,ABILITY_GUI);
-  ItemStack border=guiItem(Material.BLACK_STAINED_GLASS_PANE,ChatColor.DARK_GRAY+"✦");
-  for(int slot=0;slot<54;slot++)if(slot<9||slot>=45||slot%9==0||slot%9==8)inv.setItem(slot,border);
+  Inventory inv=Bukkit.createInventory(null,54,ABILITY_GUI);guiFrame(inv);
   int[] positions={11,13,15,29,33};
+  String active=passiveScroll(p);
   for(int i=0;i<TYPES.size();i++){
    String type=TYPES.get(i);ItemStack scroll=make(type);ItemMeta meta=scroll.getItemMeta();
-   List<String> description=new ArrayList<>(lore(type));description.add(0,ChatColor.GOLD+"✦ Click to view live cooldowns ✦");
-   description.add(ChatColor.DARK_GRAY+"Right-click: Ability 1 | Sneak + Right-click: Ability 2");meta.setLore(description);scroll.setItemMeta(meta);inv.setItem(positions[i],scroll);
+   List<String> lines=new ArrayList<>();
+   lines.add(ChatColor.DARK_GRAY+"━━━━━━━━━━━━━━━━━━━━");
+   lines.add((active.equals(type)?ChatColor.GREEN+"✔ ACTIVE PASSIVES":ChatColor.GRAY+"Inactive passives"));
+   lines.add(" ");
+   lines.add(ChatColor.GOLD+"✦ Ability 1  "+cooldownText(p,type,1));
+   lines.add(ChatColor.GOLD+"✦ Ability 2  "+cooldownText(p,type,2));
+   lines.add(" ");
+   lines.add(ChatColor.YELLOW+"➜ Click for full ability details");
+   lines.add(ChatColor.DARK_GRAY+"━━━━━━━━━━━━━━━━━━━━");
+   meta.setLore(lines);scroll.setItemMeta(meta);inv.setItem(positions[i],scroll);
   }
-  inv.setItem(22,guiItem(Material.ENCHANTED_BOOK,ChatColor.LIGHT_PURPLE+"✦ YOUR MAGIC ✦",ChatColor.GRAY+"Passive scroll: "+(passiveScroll(p).isEmpty()?"none":label(passiveScroll(p))),ChatColor.GOLD+"Words: "+words(p.getUniqueId()),ChatColor.WHITE+"/withdraw <amount> to trade Words"));
-  inv.setItem(38,utility("word"));inv.setItem(40,utility("reroller"));inv.setItem(42,utility("resurrection"));
+  inv.setItem(4,guiItem(Material.NETHER_STAR,ChatColor.LIGHT_PURPLE+"✦ SCROLLS SMP CODEX ✦",ChatColor.GRAY+"Choose a scroll to inspect its abilities",ChatColor.GRAY+"Cooldowns update whenever you reopen this menu"));
+  inv.setItem(22,guiItem(Material.ENCHANTED_BOOK,ChatColor.AQUA+"✦ YOUR STATUS ✦",ChatColor.GRAY+"Active passives: "+(active.isEmpty()?ChatColor.RED+"None":color(active)+label(active)),ChatColor.GOLD+"Words: "+words(p.getUniqueId())+" / 10",ChatColor.GRAY+"Passives work in offhand and inventory"));
+  inv.setItem(38,guiItem(Material.BOOK,ChatColor.GOLD+"✦ WORDS ✦",ChatColor.GRAY+"/words to view your balance",ChatColor.GRAY+"/withdraw 3 to withdraw 3 Words"));
+  inv.setItem(40,guiItem(Material.AMETHYST_SHARD,ChatColor.LIGHT_PURPLE+"✦ RE-ROLLER ✦",ChatColor.GRAY+"Randomly changes your scroll",ChatColor.GRAY+"Use the crafted Re-Roller item"));
+  inv.setItem(42,guiItem(Material.TOTEM_OF_UNDYING,ChatColor.AQUA+"✦ RESURRECTION ✦",ChatColor.GRAY+"Revive a Words-banned player",ChatColor.GRAY+"Use the crafted Resurrection Relic"));
+  p.openInventory(inv);
+ }
+ private void openAbilityDetail(Player p,String type){
+  Inventory inv=Bukkit.createInventory(null,45,ABILITY_GUI);guiFrame(inv);
+  ItemStack scroll=make(type);ItemMeta meta=scroll.getItemMeta();
+  meta.setLore(List.of(ChatColor.GRAY+"Your "+label(type)+" Scroll",ChatColor.GRAY+"Passives work in inventory or offhand"));scroll.setItemMeta(meta);
+  inv.setItem(4,scroll);
+  List<String> description=lore(type);
+  inv.setItem(20,decorated(Material.BLAZE_POWDER,ChatColor.GOLD+"✦ ABILITY 1 ✦",List.of(description.get(1),ChatColor.GRAY+"Status: "+cooldownText(p,type,1),ChatColor.YELLOW+"Right-click while holding the scroll")));
+  inv.setItem(24,decorated(Material.ENDER_EYE,ChatColor.AQUA+"✦ ABILITY 2 ✦",List.of(description.get(2),ChatColor.GRAY+"Status: "+cooldownText(p,type,2),ChatColor.YELLOW+"Sneak + right-click while holding")));
+  inv.setItem(31,decorated(Material.GOLDEN_APPLE,ChatColor.GREEN+"✦ PASSIVE POWERS ✦",List.of(description.get(4),ChatColor.GRAY+"Active in inventory, hotbar or offhand",passiveScroll(p).equals(type)?ChatColor.GREEN+"✔ Currently active":ChatColor.GRAY+"Not currently selected")));
+  inv.setItem(40,guiItem(Material.ARROW,ChatColor.YELLOW+"← BACK TO ALL SCROLLS",ChatColor.GRAY+"Click to return to the codex"));
   p.openInventory(inv);
  }
  @EventHandler public void abilityMenuClick(InventoryClickEvent e){
   if(!e.getView().getTitle().equals(ABILITY_GUI))return;e.setCancelled(true);
   if(!(e.getWhoClicked() instanceof Player p)||e.getClickedInventory()!=e.getView().getTopInventory())return;
+  if(e.getRawSlot()==40&&e.getView().getTopInventory().getSize()==45){openAbilities(p);p.playSound(p.getLocation(),Sound.UI_BUTTON_CLICK,0.7f,1.1f);return;}
+  if(e.getView().getTopInventory().getSize()!=54)return;
   ItemStack clicked=e.getCurrentItem();String type=scrollType(clicked);
   if(!TYPES.contains(type))return;
-  Map<String,Long> map=cooldowns.getOrDefault(p.getUniqueId(),Collections.emptyMap());long now=System.currentTimeMillis();
-  long first=Math.max(0,(map.getOrDefault(type+"1",0L)-now+999)/1000),second=Math.max(0,(map.getOrDefault(type+"2",0L)-now+999)/1000);
-  p.sendMessage(color(type)+"✦ "+label(type)+" Scroll"+ChatColor.GRAY+" | Ability 1: "+(first==0?"READY":first+"s")+" | Ability 2: "+(second==0?"READY":second+"s"));
-  p.playSound(p.getLocation(),Sound.BLOCK_AMETHYST_BLOCK_CHIME,0.7f,1.3f);
+  openAbilityDetail(p,type);p.playSound(p.getLocation(),Sound.BLOCK_AMETHYST_BLOCK_CHIME,0.7f,1.3f);
  }
  private void openRevive(Player p){Inventory inv=Bukkit.createInventory(null,54,REVIVE_GUI);int slot=0;for(UUID id:reviveBans){if(slot>=54)break;OfflinePlayer offline=Bukkit.getOfflinePlayer(id);ItemStack head=new ItemStack(Material.PLAYER_HEAD);SkullMeta meta=(SkullMeta)head.getItemMeta();meta.setOwningPlayer(offline);meta.setDisplayName(ChatColor.GREEN+offline.getName());meta.getPersistentDataContainer().set(new NamespacedKey(this,"revive_target"),PersistentDataType.STRING,id.toString());head.setItemMeta(meta);inv.setItem(slot++,head);}p.openInventory(inv);}
  @EventHandler public void revivalClick(InventoryClickEvent e){if(!e.getView().getTitle().equals(REVIVE_GUI))return;e.setCancelled(true);if(!(e.getWhoClicked() instanceof Player p)||e.getClickedInventory()!=e.getView().getTopInventory()||e.getCurrentItem()==null||!e.getCurrentItem().hasItemMeta())return;String id=e.getCurrentItem().getItemMeta().getPersistentDataContainer().get(new NamespacedKey(this,"revive_target"),PersistentDataType.STRING);if(id==null)return;UUID uuid;try{uuid=UUID.fromString(id);}catch(IllegalArgumentException ex){return;}if(!reviveBans.contains(uuid)||!utilityType(p.getInventory().getItemInMainHand()).equals("resurrection")){p.sendMessage(ChatColor.RED+"Resurrection item required in your main hand.");return;}reviveBans.remove(uuid);setWords(uuid,REVIVE_WORDS);consume(p);saveData();p.closeInventory();wordBurst(p,Color.fromRGB(50,255,225));p.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING,p.getLocation().add(0,1,0),100,1,1.5,1,0.1);p.playSound(p.getLocation(),Sound.ITEM_TOTEM_USE,1f,1f);p.sendMessage(ChatColor.GREEN+"Revived "+Bukkit.getOfflinePlayer(uuid).getName()+" with 3 Words!");}
@@ -263,9 +298,13 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
    // Grapple a block and swing toward it. Looking/moving sideways adds momentum.
    final Location hook=anchor.clone();final long until=System.currentTimeMillis()+5500;
    swingUntil.put(p.getUniqueId(),until);
+   grappleReleased.remove(p.getUniqueId());
    final double ropeLength=Math.max(3.0,hook.distance(p.getEyeLocation())*0.78);
    for(int frame=0;frame<110;frame++){Bukkit.getScheduler().runTaskLater(this,()->{
-    if(!p.isOnline()||p.isDead()||!p.getWorld().equals(hook.getWorld())||p.isSneaking()||swingUntil.getOrDefault(p.getUniqueId(),0L)!=until){swingUntil.remove(p.getUniqueId(),until);return;}
+    if(!p.isOnline()||p.isDead()||!p.getWorld().equals(hook.getWorld())||swingUntil.getOrDefault(p.getUniqueId(),0L)!=until){return;}
+    // Activation requires sneak-right-click. Only a NEW sneak after releasing Shift detaches.
+    if(!p.isSneaking())grappleReleased.add(p.getUniqueId());
+    else if(grappleReleased.contains(p.getUniqueId())){swingUntil.remove(p.getUniqueId(),until);grappleReleased.remove(p.getUniqueId());p.sendActionBar(ChatColor.GRAY+"Grapple released");return;}
     Location body=p.getLocation().add(0,1,0);Vector tether=hook.toVector().subtract(body.toVector());double dist=tether.length();
     if(dist<0.1)return;
     Vector toward=tether.clone().normalize();Vector velocity=p.getVelocity();
@@ -277,8 +316,8 @@ if(c.getName().equalsIgnoreCase("words")){if(!(s instanceof Player p)){s.sendMes
     chain(p.getEyeLocation(),hook,1.0);
     if(frameEffect(frame))p.getWorld().spawnParticle(Particle.ELECTRIC_SPARK,hook,7,0.25,0.25,0.25,0.02);
    },frame);}
-   Bukkit.getScheduler().runTaskLater(this,()->swingUntil.remove(p.getUniqueId(),until),112L);
-   p.sendMessage(ChatColor.RED+"Grapple attached! Steer to swing; sneak to release (5.5s).");
+   Bukkit.getScheduler().runTaskLater(this,()->{swingUntil.remove(p.getUniqueId(),until);grappleReleased.remove(p.getUniqueId());},112L);
+   p.sendMessage(ChatColor.RED+"Grapple attached! Release Shift, steer to swing; sneak again to detach (5.5s).");
   }
  }
  case "health1"->{guardians.put(p.getUniqueId(),now+5000);p.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION,100,2));p.addPotionEffect(new PotionEffect(PotionEffectType.RESISTANCE,100,1));p.getWorld().spawnParticle(Particle.HEART,p.getLocation().add(0,1,0),45,0.7,0.9,0.7,0.02);p.getWorld().playSound(p.getLocation(),Sound.BLOCK_BEACON_ACTIVATE,0.7f,1.5f);}
