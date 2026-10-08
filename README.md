@@ -1,1 +1,1 @@
-ScrollsSMP v5: max 10 Words, new scroll/re-roller reveal animations, and matching repaired 3D model UVs. Build with GitHub Actions; upload JAR to Paper 1.21.11. Install matching resource pack locally. Back up server first. Not yet live-tested.
+ScrollsSMP v6 source for Paper 1.21.11. GitHub Actions builds a JAR. Custom models are in the separate v6 resource pack. Effects use native Minecraft particles; dome is a particle hemisphere, not actual ice blocks. Not live-server tested.
