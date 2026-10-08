@@ -27,7 +27,7 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
         key = new NamespacedKey(this, "scroll_type");
         getServer().getPluginManager().registerEvents(this, this);
         Objects.requireNonNull(getCommand("scroll")).setExecutor(this);
-        getServer().getScheduler().runTaskTimer(this, this::tickPassives, 20L, 40L);
+        getServer().getScheduler().runTaskTimer(this, this::tickPassives, 1L, 10L);
     }
     private String type(ItemStack item) {
         if (item == null || !item.hasItemMeta()) return null;
@@ -39,7 +39,24 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
         ItemStack item = new ItemStack(Material.PAPER);
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(ChatColor.GOLD + "✦ " + ChatColor.BOLD + Character.toUpperCase(t.charAt(0)) + t.substring(1) + " Scroll");
-        meta.setLore(List.of(ChatColor.GRAY + "Right click: Ability 1", ChatColor.GRAY + "Sneak + right click: Ability 2", ChatColor.AQUA + "Hold in main hand for passives"));
+        meta.setLore(switch (t) {
+            case "sculk" -> List.of(
+                ChatColor.DARK_GREEN + "✦ WARDEN POWERS ✦",
+                ChatColor.GREEN + "Ability 1: " + ChatColor.WHITE + "Sonic Boom",
+                ChatColor.GRAY + "  4 hearts damage | Right-click | 18s cooldown",
+                ChatColor.GREEN + "Ability 2: " + ChatColor.WHITE + "True Invisibility",
+                ChatColor.GRAY + "  Fully hidden incl. armour for 5s | Sneak + right-click | 30s",
+                ChatColor.DARK_GREEN + "Passives:",
+                ChatColor.GRAY + "  • Immune to Warden attacks and targeting",
+                ChatColor.GRAY + "  • Speed II while standing on sculk",
+                ChatColor.GRAY + "  • Hero of the Village V",
+                ChatColor.DARK_GRAY + "Hold in main hand for passives");
+            case "frost" -> List.of(ChatColor.AQUA + "Abilities:", ChatColor.GRAY + "Right-click: Ice Prison", ChatColor.GRAY + "Sneak + right-click: Blizzard", ChatColor.AQUA + "Passives:", ChatColor.GRAY + "Freeze resistance", ChatColor.GRAY + "Chance to slow attackers", ChatColor.GRAY + "Speed II on ice");
+            case "nature" -> List.of(ChatColor.GREEN + "Abilities:", ChatColor.GRAY + "Right-click: Vine Trap", ChatColor.GRAY + "Sneak + right-click: Healing Bloom", ChatColor.GREEN + "Passives:", ChatColor.GRAY + "Regeneration in sunlight", ChatColor.GRAY + "Reduced fall damage", ChatColor.GRAY + "Chance to poison attackers");
+            case "shadow" -> List.of(ChatColor.DARK_PURPLE + "Abilities:", ChatColor.GRAY + "Right-click: Shadow Step", ChatColor.GRAY + "Sneak + right-click: Darkness", ChatColor.DARK_PURPLE + "Passives:", ChatColor.GRAY + "Speed in darkness", ChatColor.GRAY + "Reduced projectile damage", ChatColor.GRAY + "Brief invisibility after a kill");
+            case "storm" -> List.of(ChatColor.YELLOW + "Abilities:", ChatColor.GRAY + "Right-click: Lightning Strike", ChatColor.GRAY + "Sneak + right-click: Thunder Dash", ChatColor.YELLOW + "Passives:", ChatColor.GRAY + "Speed I", ChatColor.GRAY + "Reduced lightning damage", ChatColor.GRAY + "Chance to strike attackers");
+            default -> List.of(ChatColor.GRAY + "Scroll");
+        });
         meta.getPersistentDataContainer().set(key, PersistentDataType.STRING, t);
         meta.setCustomModelData(Arrays.asList(TYPES).indexOf(t) + 1);
         meta.addEnchant(org.bukkit.enchantments.Enchantment.UNBREAKING, 1, true);
@@ -113,9 +130,27 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
                 } else {
                     hidden.add(p.getUniqueId());
                     effect(p, PotionEffectType.INVISIBILITY, 5, 0);
-                    for (Player viewer : Bukkit.getOnlinePlayers()) if (viewer != p) viewer.hidePlayer(this, p);
+                    // Hide the entire player entity from other clients, including armour and held items.
+                    // Reapply while active in case a join/respawn or another plugin refreshes visibility.
+                    for (Player viewer : Bukkit.getOnlinePlayers()) {
+                        if (viewer != p) {
+                            viewer.hidePlayer(this, p);
+                            viewer.hideEntity(this, p);
+                        }
+                    }
+                    for (int delay = 10; delay < 100; delay += 10) {
+                        Bukkit.getScheduler().runTaskLater(this, () -> {
+                            if (!hidden.contains(p.getUniqueId()) || !p.isOnline()) return;
+                            for (Player viewer : Bukkit.getOnlinePlayers()) {
+                                if (viewer != p) {
+                                    viewer.hidePlayer(this, p);
+                                    viewer.hideEntity(this, p);
+                                }
+                            }
+                        }, delay);
+                    }
                     Bukkit.getScheduler().runTaskLater(this, () -> reveal(p), 100L);
-                    p.sendMessage(ChatColor.DARK_AQUA + "Fully invisible for 5 seconds!");
+                    p.sendMessage(ChatColor.DARK_AQUA + "True Invisibility: hidden from other players for 5 seconds!");
                 }
             }
             case "frost" -> {
@@ -157,8 +192,16 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
             String t = equipped(p); if (t == null) continue;
             switch (t) {
                 case "sculk" -> {
-                    Material below = p.getLocation().clone().subtract(0, 1, 0).getBlock().getType();
-                    if (below.name().contains("SCULK")) effect(p, PotionEffectType.SPEED, 4, 1);
+                    for (Entity nearby : p.getNearbyEntities(24, 24, 24)) {
+                        if (nearby instanceof Warden warden && p.equals(warden.getTarget())) warden.setTarget(null);
+                    }
+                    // Check the actual supporting block, including sculk veins and sensors.
+                    Location feet = p.getLocation();
+                    Material below = feet.clone().subtract(0, 0.12, 0).getBlock().getType();
+                    Material standingOn = feet.clone().subtract(0, 0.5, 0).getBlock().getType();
+                    if (below.name().contains("SCULK") || standingOn.name().contains("SCULK")) {
+                        effect(p, PotionEffectType.SPEED, 2, 1);
+                    }
                     effect(p, PotionEffectType.HERO_OF_THE_VILLAGE, 4, 4);
                 }
                 case "frost" -> { if (p.getFreezeTicks() > 0) p.setFreezeTicks(0); if (p.getLocation().subtract(0, 1, 0).getBlock().getType().name().contains("ICE")) effect(p, PotionEffectType.SPEED, 4, 1); }
@@ -170,12 +213,12 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
     }
     private void reveal(Player p) {
         if (!hidden.remove(p.getUniqueId())) return;
-        for (Player viewer : Bukkit.getOnlinePlayers()) if (viewer != p) viewer.showPlayer(this, p);
+        for (Player viewer : Bukkit.getOnlinePlayers()) if (viewer != p) { viewer.showEntity(this, p); viewer.showPlayer(this, p); }
     }
     @EventHandler public void join(PlayerJoinEvent e) {
         for (UUID id : hidden) {
             Player invisible = Bukkit.getPlayer(id);
-            if (invisible != null && invisible != e.getPlayer()) e.getPlayer().hidePlayer(this, invisible);
+            if (invisible != null && invisible != e.getPlayer()) { e.getPlayer().hidePlayer(this, invisible); e.getPlayer().hideEntity(this, invisible); }
         }
     }
     @EventHandler public void quit(PlayerQuitEvent e) { reveal(e.getPlayer()); }
@@ -186,10 +229,17 @@ public final class ScrollsPlugin extends JavaPlugin implements Listener, Command
         }
     }
     @EventHandler public void wardenTarget(EntityTargetLivingEntityEvent e) {
-        if (e.getEntity() instanceof Warden && e.getTarget() instanceof Player p && "sculk".equals(equipped(p))) e.setCancelled(true);
+        if (e.getEntity() instanceof Warden && e.getTarget() instanceof Player p && "sculk".equals(equipped(p))) {
+            e.setCancelled(true);
+            ((Warden) e.getEntity()).setTarget(null);
+        }
     }
     @EventHandler(priority = EventPriority.HIGHEST) public void wardenAttack(EntityDamageByEntityEvent e) {
-        if (e.getDamager() instanceof Warden && e.getEntity() instanceof Player p && "sculk".equals(equipped(p))) e.setCancelled(true);
+        if (e.getEntity() instanceof Player p && "sculk".equals(equipped(p)) &&
+            (e.getDamager() instanceof Warden ||
+             (e.getDamager() instanceof Projectile projectile && projectile.getShooter() instanceof Warden))) {
+            e.setCancelled(true);
+        }
     }
     @EventHandler public void damage(EntityDamageEvent e) {
         if (!(e.getEntity() instanceof Player p)) return;
