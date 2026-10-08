@@ -1,0 +1,13 @@
+name: ScrollsSMP
+version: 1.0.0
+main: me.scrolls.smp.ScrollsPlugin
+api-version: '1.21'
+author: ScrollsSMP
+description: Five elemental scrolls with two abilities and three passives each.
+commands:
+  scroll:
+    description: Give or equip elemental scrolls
+    usage: /scroll give <player> <sculk|frost|nature|shadow|storm>
+permissions:
+  scrolls.admin:
+    default: op
